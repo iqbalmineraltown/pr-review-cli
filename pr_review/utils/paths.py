@@ -41,3 +41,10 @@ def ensure_directories() -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
     prompts_dir.mkdir(parents=True, exist_ok=True)
+
+
+def get_git_cache_dir() -> Path:
+    """Get the git repository cache directory"""
+    cache_dir = get_cache_dir()
+    git_cache = cache_dir / "git_repos"
+    return git_cache

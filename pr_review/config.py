@@ -25,34 +25,14 @@ class Config:
         load_dotenv()
 
     @property
-    def bitbucket_client_id(self) -> Optional[str]:
-        """Get Bitbucket OAuth client ID from .env"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_CLIENT_ID")
+    def bitbucket_email(self) -> Optional[str]:
+        """Get Bitbucket email for basic auth (App Password) from .env"""
+        return os.getenv("PR_REVIEWER_BITBUCKET_EMAIL")
 
     @property
-    def bitbucket_client_secret(self) -> Optional[str]:
-        """Get Bitbucket OAuth client secret from .env"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_CLIENT_SECRET")
-
-    @property
-    def bitbucket_access_token(self) -> Optional[str]:
-        """Get Bitbucket OAuth access token from .env"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_ACCESS_TOKEN")
-
-    @property
-    def bitbucket_refresh_token(self) -> Optional[str]:
-        """Get Bitbucket OAuth refresh token from .env"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_REFRESH_TOKEN")
-
-    @property
-    def bitbucket_username(self) -> Optional[str]:
-        """Get Bitbucket username from .env"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_USERNAME")
-
-    @property
-    def bitbucket_user_uuid(self) -> Optional[str]:
-        """Get Bitbucket user UUID from .env (preferred over username for matching)"""
-        return os.getenv("PR_REVIEWER_BITBUCKET_USER_UUID")
+    def bitbucket_api_token(self) -> Optional[str]:
+        """Get Bitbucket API token for basic auth (App Password) from .env"""
+        return os.getenv("PR_REVIEWER_BITBUCKET_API_TOKEN")
 
     @property
     def bitbucket_workspace(self) -> Optional[str]:
@@ -60,28 +40,17 @@ class Config:
         return os.getenv("PR_REVIEWER_BITBUCKET_WORKSPACE")
 
     @property
-    def is_using_oauth(self) -> bool:
-        """Check if using OAuth (has all required OAuth credentials)"""
-        return all([
-            self.bitbucket_client_id,
-            self.bitbucket_client_secret,
-            self.bitbucket_refresh_token
-        ])
+    def bitbucket_user_uuid(self) -> Optional[str]:
+        """Get Bitbucket user UUID from .env (cached for performance)"""
+        return os.getenv("PR_REVIEWER_BITBUCKET_USER_UUID")
 
     @property
-    def has_valid_access_token(self) -> bool:
-        """Check if we have a valid access token"""
-        return bool(self.bitbucket_access_token)
+    def has_valid_credentials(self) -> bool:
+        """Check if we have valid basic auth credentials"""
+        return all([self.bitbucket_email, self.bitbucket_api_token])
 
-    @property
-    def bitbucket_token(self) -> Optional[str]:
-        """
-        Get Bitbucket access token (legacy property for backwards compatibility).
-        """
-        return self.bitbucket_access_token
-
-    def _print_token_warning(self):
-        """Print helpful warning message when token is missing"""
+    def _print_credentials_warning(self):
+        """Print helpful warning message when credentials are missing"""
         env_file = get_env_file()
 
         print("\n" + "="*60)
@@ -98,15 +67,17 @@ class Config:
             print(f"✅ .env file exists at: {env_file}")
             print(f"   But it's missing required fields!\n")
 
-        print("2. Add these fields to your .env file:")
-        print(f"   PR_REVIEWER_BITBUCKET_CLIENT_ID=your_client_id")
-        print(f"   PR_REVIEWER_BITBUCKET_CLIENT_SECRET=your_client_secret")
-        print(f"   PR_REVIEWER_BITBUCKET_REFRESH_TOKEN=your_refresh_token")
-        print(f"   PR_REVIEWER_BITBUCKET_ACCESS_TOKEN=your_access_token")
-        print(f"   PR_REVIEWER_BITBUCKET_USERNAME=your_username\n")
+        print("2. Create an App Password at:")
+        print("   https://bitbucket.org/account/settings/app-passwords/\n")
+        print("   Required permissions:")
+        print("   ✅ Pull requests: Read")
+        print("   ✅ Repositories: Read")
+        print("   ✅ Account: Read (optional)\n")
 
-        print("3. Or run OAuth setup:")
-        print("   python3 oauth_helper.py <CLIENT_ID> <CLIENT_SECRET>\n")
+        print("3. Add these fields to your .env file:")
+        print(f"   PR_REVIEWER_BITBUCKET_EMAIL=your_email@example.com")
+        print(f"   PR_REVIEWER_BITBUCKET_API_TOKEN=your_app_password")
+        print(f"   PR_REVIEWER_BITBUCKET_WORKSPACE=your_workspace\n")
 
         print("="*60 + "\n")
 
@@ -130,3 +101,19 @@ class Config:
     def config_dir(self) -> Path:
         from .utils.paths import get_config_dir
         return get_config_dir()
+
+    @property
+    def use_ssh_for_git(self) -> bool:
+        return os.getenv("PR_REVIEWER_GIT_USE_SSH", "true").lower() == "true"
+
+    @property
+    def git_cache_max_age_days(self) -> int:
+        return int(os.getenv("PR_REVIEWER_GIT_CACHE_MAX_AGE", "30"))
+
+    @property
+    def git_cache_max_size_gb(self) -> float:
+        return float(os.getenv("PR_REVIEWER_GIT_CACHE_MAX_SIZE", "5.0"))
+
+    @property
+    def git_timeout_seconds(self) -> int:
+        return int(os.getenv("PR_REVIEWER_GIT_TIMEOUT", "300"))

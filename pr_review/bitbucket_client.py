@@ -10,32 +10,27 @@ from .config import Config
 
 
 class BitbucketClient:
-    """Client for interacting with Bitbucket API with OAuth token refresh support"""
+    """Client for interacting with Bitbucket API using App Password authentication"""
 
     def __init__(
         self,
-        access_token: Optional[str] = None,
-        base_url: Optional[str] = None,
-        username: Optional[str] = None,
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
-        refresh_token: Optional[str] = None
+        email: str,
+        api_token: str,
+        base_url: Optional[str] = None
     ):
-        self.access_token = access_token
-        self.username = username
+        self.email = email
+        self.api_token = api_token
         self.base_url = base_url or "https://api.bitbucket.org/2.0"
 
-        # OAuth credentials
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-
-        # Token expiration tracking
-        self.token_expires_at = None
+        # Set up Basic authentication headers
+        import base64
+        auth_string = f"{email}:{api_token}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
 
         self.headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {access_token}"
+            "Authorization": f"Basic {auth_b64}"
         }
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -53,18 +48,11 @@ class BitbucketClient:
             await self._client.aclose()
 
     async def _get(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """Make a GET request to the Bitbucket API with token refresh on 401"""
+        """Make a GET request to the Bitbucket API"""
         if not self._client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         response = await self._client.get(endpoint, params=params)
-
-        # If we get a 401 and have OAuth credentials, try to refresh
-        if response.status_code == 401 and self._can_refresh_token():
-            await self._refresh_access_token()
-            # Retry the request with new token
-            response = await self._client.get(endpoint, params=params)
-
         response.raise_for_status()
         return response.json()
 
@@ -74,160 +62,8 @@ class BitbucketClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         response = await self._client.get(endpoint, params=params)
-
-        # If we get a 401 and have OAuth credentials, try to refresh
-        if response.status_code == 401 and self._can_refresh_token():
-            await self._refresh_access_token()
-            # Retry the request with new token
-            response = await self._client.get(endpoint, params=params)
-
         response.raise_for_status()
         return response.text
-
-    def _can_refresh_token(self) -> bool:
-        """Check if we can refresh the access token"""
-        return all([
-            self.client_id,
-            self.client_secret,
-            self.refresh_token
-        ])
-
-    async def _refresh_access_token(self):
-        """Refresh the access token using the refresh token"""
-        if not self._can_refresh_token():
-            raise RuntimeError("Cannot refresh token: OAuth credentials not configured")
-
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token
-        }
-
-        auth = httpx.BasicAuth(self.client_id, self.client_secret)
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/site/oauth2/access_token",
-                data=data,
-                auth=auth,
-                headers={"Accept": "application/json"}
-            )
-            response.raise_for_status()
-            tokens = response.json()
-
-        # Update tokens
-        self.access_token = tokens.get("access_token", self.access_token)
-        self.refresh_token = tokens.get("refresh_token", self.refresh_token)
-
-        # Update expiration
-        expires_in = tokens.get("expires_in", 3600)
-        self.token_expires_at = time.time() + expires_in
-
-        # Update client headers
-        self.headers["Authorization"] = f"Bearer {self.access_token}"
-        if self._client:
-            self._client.headers["Authorization"] = f"Bearer {self.access_token}"
-
-        # Save updated tokens to cache
-        self._save_tokens_to_cache(tokens)
-
-        print("  [dim]🔄 Token refreshed[/dim]")
-
-    def _save_tokens_to_cache(self, tokens: dict):
-        """Save updated tokens to .env file with proper formatting"""
-        env_file = Path.home() / ".pr-review-cli" / ".env"
-
-        try:
-            # Read existing .env to preserve user settings
-            existing_env = {}
-            if env_file.exists():
-                from dotenv import dotenv_values
-                existing_env = dotenv_values(env_file)
-
-            # Update token values
-            new_access_token = tokens.get("access_token", self.access_token)
-            new_refresh_token = self.refresh_token
-
-            # Build new .env content (with clear sections and warnings)
-            env_content = f"""# ═══════════════════════════════════════════════════════════════
-# Bitbucket OAuth Configuration
-# ═══════════════════════════════════════════════════════════════
-#
-# ⚠️  IMPORTANT NOTES:
-#   • Fields marked [AUTO-POPULATED] are managed automatically
-#   • DO NOT manually edit [AUTO-POPULATED] fields
-#   • Token refresh will update these fields automatically
-#
-# ═══════════════════════════════════════════════════════════════
-
-# ────────────────────────────────────────────────────────────────────────
-# USER CONFIGURATION (Fill these in yourself)
-# ────────────────────────────────────────────────────────────────────────
-
-"""
-
-            # User configuration (preserve existing values)
-            if self.client_id:
-                env_content += f"PR_REVIEWER_BITBUCKET_CLIENT_ID={self.client_id}\n"
-            elif existing_env.get("PR_REVIEWER_BITBUCKET_CLIENT_ID"):
-                env_content += f"PR_REVIEWER_BITBUCKET_CLIENT_ID={existing_env.get('PR_REVIEWER_BITBUCKET_CLIENT_ID')}\n"
-
-            if self.client_secret:
-                env_content += f"PR_REVIEWER_BITBUCKET_CLIENT_SECRET={self.client_secret}\n"
-            elif existing_env.get("PR_REVIEWER_BITBUCKET_CLIENT_SECRET"):
-                env_content += f"PR_REVIEWER_BITBUCKET_CLIENT_SECRET={existing_env.get('PR_REVIEWER_BITBUCKET_CLIENT_SECRET')}\n"
-
-            if self.username:
-                env_content += f"PR_REVIEWER_BITBUCKET_USERNAME={self.username}\n"
-            elif existing_env.get("PR_REVIEWER_BITBUCKET_USERNAME"):
-                env_content += f"PR_REVIEWER_BITBUCKET_USERNAME={existing_env.get('PR_REVIEWER_BITBUCKET_USERNAME')}\n"
-
-            if existing_env.get("PR_REVIEWER_BITBUCKET_WORKSPACE"):
-                env_content += f"PR_REVIEWER_BITBUCKET_WORKSPACE={existing_env.get('PR_REVIEWER_BITBUCKET_WORKSPACE')}\n"
-
-            # Automatic tokens section
-            env_content += f"""
-# ────────────────────────────────────────────────────────────────────────
-# AUTOMATIC TOKENS (DO NOT EDIT - Managed by oauth_helper.py and refresh_token.py)
-# ────────────────────────────────────────────────────────────────────────
-# Last updated: {time.strftime('%Y-%m-%d %H:%M:%S')} (auto-refreshed)
-
-# [AUTO-POPULATED] Access token (expires in 2 hours, auto-refreshed)
-PR_REVIEWER_BITBUCKET_ACCESS_TOKEN={new_access_token}
-
-# [AUTO-POPULATED] Refresh token (long-lived, used to get new access tokens)
-PR_REVIEWER_BITBUCKET_REFRESH_TOKEN={new_refresh_token}
-"""
-
-            # Add any other existing env vars (optional config)
-            optional_vars = []
-            for key, value in existing_env.items():
-                if key not in [
-                    "PR_REVIEWER_BITBUCKET_CLIENT_ID",
-                    "PR_REVIEWER_BITBUCKET_CLIENT_SECRET",
-                    "PR_REVIEWER_BITBUCKET_ACCESS_TOKEN",
-                    "PR_REVIEWER_BITBUCKET_REFRESH_TOKEN",
-                    "PR_REVIEWER_BITBUCKET_USERNAME",
-                    "PR_REVIEWER_BITBUCKET_WORKSPACE"
-                ]:
-                    optional_vars.append(f"{key}={value}")
-
-            if optional_vars:
-                env_content += "\n# ═══════════════════════════════════════════════════════════════\n"
-                env_content += "# OPTIONAL CONFIGURATION\n"
-                env_content += "# ═══════════════════════════════════════════════════════════════\n\n"
-                env_content += "\n".join(optional_vars) + "\n"
-
-            # Write to .env file
-            with open(env_file, 'w') as f:
-                f.write(env_content)
-
-            # Set secure permissions
-            import os
-            os.chmod(env_file, 0o600)
-
-        except Exception as e:
-            # Don't fail if we can't update .env
-            pass
 
     async def get_current_user(self) -> UserInfo:
         """Get the currently authenticated user's info"""
@@ -380,8 +216,6 @@ PR_REVIEWER_BITBUCKET_REFRESH_TOKEN={new_refresh_token}
             # Filter out PRs that are not open (declined, closed, merged)
             # Note: Even though we query state="OPEN", Bitbucket sometimes returns PRs in other states
             if pr_state.lower() not in ["open", "opened"]:
-                print(f"\n[DEBUG] PR #{pr_id}: {pr_data.get('title', '')[:50]}")
-                print(f"[DEBUG] PR state is '{pr_state}' - filtering out")
                 continue
 
             # Check if user has already responded to this PR (approved or requested changes)
@@ -391,22 +225,14 @@ PR_REVIEWER_BITBUCKET_REFRESH_TOKEN={new_refresh_token}
             # Get user identifier for response check
             user_identifier = user_uuid if user_uuid else user_username
 
-            # Debug: Log what we're looking for
-            print(f"[DEBUG] Looking for user - UUID: {user_uuid}, Username: {user_username}")
-            print(f"[DEBUG] Participants: {len(participants)} found")
-
             if user_identifier:
                 for participant in participants:
                     # Check if this participant is the current user
                     participant_uuid = participant.get("user", {}).get("uuid", "").replace("{", "").replace("}", "")
                     participant_username = participant.get("user", {}).get("username", "")
                     participant_nickname = participant.get("user", {}).get("nickname", "")
-                    participant_display_name = participant.get("user", {}).get("display_name", "")
                     participant_approved = participant.get("approved", False)
                     participant_status = participant.get("status", "")
-
-                    # Debug: Show each participant
-                    print(f"[DEBUG]   - Participant: username='{participant_username}' nickname='{participant_nickname}' (UUID: {participant_uuid[:8] if participant_uuid else 'None'}...) - Approved: {participant_approved}, Status: {participant_status}")
 
                     # Match by UUID or username
                     # Note: Bitbucket API sometimes returns empty username, so fallback to nickname
@@ -417,10 +243,8 @@ PR_REVIEWER_BITBUCKET_REFRESH_TOKEN={new_refresh_token}
                     )
 
                     if is_current_user:
-                        print(f"[DEBUG]   ✓ MATCH FOUND for current user!")
                         # Check if user has approved
                         if participant_approved:
-                            print(f"[DEBUG]   → User has APPROVED - filtering out")
                             user_has_responded = True
                             break
 
@@ -428,19 +252,12 @@ PR_REVIEWER_BITBUCKET_REFRESH_TOKEN={new_refresh_token}
                         # Bitbucket API: status can be "approved", "declined", "changes_requested", etc.
                         participant_status_lower = participant_status.lower()
                         if participant_status_lower in ["declined", "changes_requested"]:
-                            print(f"[DEBUG]   → User has status '{participant_status}' - filtering out")
                             user_has_responded = True
                             break
-                        else:
-                            print(f"[DEBUG]   → User hasn't responded yet - keeping")
 
             # Skip PRs where user has already responded
             if user_has_responded:
                 continue
-
-            # PR passed all filters - log and include it
-            print(f"\n[DEBUG] PR #{pr_id}: {pr_data.get('title', '')[:50]}")
-            print(f"[DEBUG] PASSED all filters - including in review queue")
 
             author_data = pr_data.get("author", {})
             author = author_data.get("nickname", author_data.get("display_name", "Unknown"))

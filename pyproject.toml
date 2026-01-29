@@ -1,9 +1,28 @@
 [tool.poetry]
 name = "pr-review-cli"
 version = "0.1.0"
-description = "AI-powered PR review assistant for Bitbucket"
-authors = ["Your Name <you@example.com>"]
+description = "AI-powered PR review assistant for Bitbucket with Claude integration"
+authors = ["Your Name <your-email@example.com>"]
+license = "MIT"
 readme = "README.md"
+repository = "https://github.com/yourusername/pr-review-cli"
+keywords = ["bitbucket", "pull-request", "review", "claude", "ai", "code-review"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+]
+packages = [
+    { include = "pr_review" },
+    { include = "oauth_helper.py" },
+    { include = "refresh_token.py" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"

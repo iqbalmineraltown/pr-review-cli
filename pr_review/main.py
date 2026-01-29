@@ -31,6 +31,21 @@ def review(
     export: str = typer.Option(None, "--export", "-e", help="Export format: markdown/json"),
     output: str = typer.Option("pr_report", "--output", "-o", help="Output file path"),
     max_prs: int = typer.Option(30, "--max-prs", "-m", help="Max PRs to analyze"),
+    local_diff: bool = typer.Option(
+        False,
+        "--local-diff/--api-diff",
+        help="Use local git cloning instead of API for diffs"
+    ),
+    git_cache_cleanup: bool = typer.Option(
+        False,
+        "--cleanup-git-cache",
+        help="Clean stale git repositories before running"
+    ),
+    use_https: bool = typer.Option(
+        False,
+        "--use-https",
+        help="Use HTTPS instead of SSH for git operations"
+    ),
 ):
     """
     Fetch and analyze PRs assigned to you as a reviewer from Bitbucket with AI assistance.
@@ -40,6 +55,9 @@ def review(
 
     With --pr-url, analyze a single PR from its Bitbucket URL (automatically non-interactive).
     With --skip-analyze, skip AI analysis and show PR summary only (faster, no API costs).
+    With --local-diff, clone repositories and generate diffs locally (bypasses API rate limits).
+    With --cleanup-git-cache, clean stale cached repositories before running (requires --local-diff).
+    With --use-https, use HTTPS instead of SSH for git operations (requires --local-diff).
     """
 
     # ========== SINGLE PR URL ANALYSIS ==========
@@ -75,41 +93,30 @@ def review(
         try:
             config = Config()
 
+            # Check for required credentials
+            if not config.has_valid_credentials:
+                config._print_credentials_warning()
+                raise typer.Exit(1)
+
             # Resolve workspace: use config default if not provided as argument
             target_workspace = workspace
             if target_workspace is None:
                 target_workspace = config.bitbucket_workspace
                 if not target_workspace:
+                    env_file = config.config_dir / ".env"
                     console.print("\n[red]❌ Error:[/red] Workspace not specified.")
-                    console.print("\nPlease either:")
-                    console.print(f"  1. Add PR_REVIEWER_BITBUCKET_WORKSPACE to {config.config_dir}/.env")
-                    console.print("  2. Or provide workspace as argument: python3 -m pr_review.main review <workspace>\n")
+                    console.print(f"\nAdd to your config file ({env_file}):")
+                    console.print(f"  [cyan]PR_REVIEWER_BITBUCKET_WORKSPACE=[/cyan][dim]your_workspace_name[/dim]\n")
+                    console.print("Or provide workspace as argument:")
+                    console.print("  [cyan]pr-review review <workspace>[/cyan]\n")
                     raise typer.Exit(1)
                 else:
                     console.print(f"[dim]Using workspace from config: {target_workspace}[/dim]\n")
 
-            # Check if using OAuth or legacy token
-            if not config.has_valid_access_token:
-                console.print("\n[red]❌ Error:[/red] No Bitbucket credentials found.")
-                console.print("\nPlease choose one of these authentication methods:\n")
-
-                console.print("[cyan]Option 1: OAuth Setup (Recommended)[/cyan]")
-                console.print("  Run: python3 oauth_helper.py <CLIENT_ID> <CLIENT_SECRET>")
-                console.print(f"  Credentials will be saved to: {config.config_dir}/.env")
-                console.print("  No environment variables needed!\n")
-
-                console.print("[cyan]Option 2: Manual .env File[/cyan]")
-                console.print(f"  1. Copy .env.example to {config.config_dir}/.env")
-                console.print("  2. Fill in your OAuth credentials")
-                console.print("  3. Or manually export environment variables\n")
-
-                console.print("[cyan]Option 3: Environment Variables (Legacy)[/cyan]")
-                console.print("  export PR_REVIEWER_BITBUCKET_ACCESS_TOKEN=\"your_repository_token\"")
-                console.print("  export PR_REVIEWER_BITBUCKET_USERNAME=\"your_username\"\n")
-
-                console.print(f"[dim]See .env.example or SETUP.md for more details[/dim]\n")
-
-                raise typer.Exit(1)
+            # Show config info for transparency
+            env_file = config.config_dir / ".env"
+            console.print(f"[dim]💾 Config: {env_file}[/dim]")
+            console.print(f"[dim]🔑 Auth: {config.bitbucket_email}[/dim]\n")
 
         except RuntimeError as e:
             console.print(f"[red]Error: {e}[/red]")
@@ -138,14 +145,41 @@ def review(
         # 1. Initialize Bitbucket client and auto-detect current user
         with console.status("[cyan]Connecting to Bitbucket...[/cyan]"):
             async with BitbucketClient(
-                access_token=config.bitbucket_access_token,
-                base_url=config.bitbucket_base_url,
-                username=config.bitbucket_username,
-                client_id=config.bitbucket_client_id,
-                client_secret=config.bitbucket_client_secret,
-                refresh_token=config.bitbucket_refresh_token
+                email=config.bitbucket_email,
+                api_token=config.bitbucket_api_token,
+                base_url=config.bitbucket_base_url
             ) as client:
                 current_user = None
+
+                # Initialize local git manager if local diff mode is enabled
+                git_manager = None
+                if local_diff:
+                    from .git_diff_manager import LocalGitDiffManager
+                    from .utils.git_operations import GitOperations
+
+                    # Verify git is available
+                    if not GitOperations.verify_git_available():
+                        console.print("\n[red]❌ Error:[/red] git is not installed or not accessible.")
+                        console.print("\nPlease install git to use --local-diff mode:")
+                        console.print("  [cyan]https://git-scm.com/downloads[/cyan]\n")
+                        raise typer.Exit(1)
+
+                    git_manager = LocalGitDiffManager(
+                        cache_dir=config.cache_dir,
+                        console=console,
+                        use_ssh=not use_https,
+                        max_age_days=config.git_cache_max_age_days,
+                        max_size_gb=config.git_cache_max_size_gb,
+                        timeout_seconds=config.git_timeout_seconds
+                    )
+
+                    if git_cache_cleanup:
+                        with console.status("[cyan]Cleaning git cache...[/cyan]"):
+                            await git_manager.cleanup_stale_repos()
+                        console.print("[green]✓[/green] Git cache cleaned\n")
+
+                    if use_https:
+                        console.print("[dim]ℹ️  Using HTTPS for git operations[/dim]\n")
 
                 # Try to get user info from /user endpoint (may fail with some API tokens)
                 # First, check if we have UUID from config (preferred)
@@ -188,9 +222,21 @@ def review(
                         pr = await client.get_single_pr(url_workspace, url_repo, url_pr_id)
                         console.print(f"[green]✓[/green] Found PR: [bold]{pr.title}[/bold]")
 
-                    with console.status(f"[cyan]Retrieving diff...[/cyan]"):
-                        diff = await client.get_pr_diff(url_workspace, url_repo, url_pr_id)
-                        console.print(f"[green]✓[/green] Diff loaded ([cyan]{diff.additions + diff.deletions:,}[/cyan] lines changed)")
+                    # Fetch diff based on mode
+                    if local_diff:
+                        with console.status(f"[cyan]Generating local diff...[/cyan]"):
+                            diff = await git_manager.get_pr_diff_local(
+                                workspace=url_workspace,
+                                repo_slug=url_repo,
+                                pr_id=url_pr_id,
+                                source_branch=pr.source_branch,
+                                destination_branch=pr.destination_branch
+                            )
+                            console.print(f"[green]✓[/green] Diff loaded ([cyan]{diff.additions + diff.deletions:,}[/cyan] lines changed)")
+                    else:
+                        with console.status(f"[cyan]Retrieving diff...[/cyan]"):
+                            diff = await client.get_pr_diff(url_workspace, url_repo, url_pr_id)
+                            console.print(f"[green]✓[/green] Diff loaded ([cyan]{diff.additions + diff.deletions:,}[/cyan] lines changed)")
 
                     prs = [pr]
                     diffs = [diff]
@@ -201,8 +247,9 @@ def review(
                     else:
                         search_scope = f"[cyan]all repositories in {target_workspace}[/cyan]"
 
+                    # Fetch PRs (API mode always needed for PR metadata)
                     with console.status(f"[cyan]Fetching PRs assigned to you for review in {search_scope}...[/cyan]"):
-                        prs, diffs = await client.fetch_prs_and_diffs(target_workspace, repo, user_uuid, user_username)
+                        prs = await client.fetch_prs_assigned_to_me(target_workspace, repo, user_uuid, user_username)
 
                     if not prs:
                         console.print("[yellow]No PRs assigned to you for review. You're all caught up! 🎉[/yellow]")
@@ -213,9 +260,37 @@ def review(
 
                     # Limit PRs if specified
                     prs = prs[:max_prs]
-                    diffs = diffs[:max_prs]
                     if len(prs) < max_prs:
                         console.print(f"[dim]Processing {len(prs)} PRs (limited from {max_prs})[/dim]")
+
+                    # Fetch diffs based on mode
+                    if local_diff:
+                        # Local git mode - generate diffs from cloned repos
+                        diffs = []
+                        for pr in prs:
+                            with console.status(f"[cyan]Generating local diff for PR {pr.id}...[/cyan]"):
+                                diff = await git_manager.get_pr_diff_local(
+                                    workspace=pr.workspace,
+                                    repo_slug=pr.repo_slug,
+                                    pr_id=pr.id,
+                                    source_branch=pr.source_branch,
+                                    destination_branch=pr.destination_branch
+                                )
+                                diffs.append(diff)
+                                console.print(f"[green]✓[/green] PR {pr.id}: [cyan]{diff.additions + diff.deletions:,}[/cyan] lines changed")
+                    else:
+                        # API mode - fetch diffs via API
+                        with console.status(f"[cyan]Fetching diffs for {len(prs)} PR(s)...[/cyan]"):
+                            # Fetch diffs in parallel
+                            import asyncio
+                            tasks = [
+                                client.get_pr_diff(pr.workspace, pr.repo_slug, pr.id)
+                                for pr in prs
+                            ]
+                            diffs = await asyncio.gather(*tasks)
+
+                        total_lines = sum(d.additions + d.deletions for d in diffs)
+                        console.print(f"[green]✓[/green] Loaded [cyan]{total_lines:,}[/cyan] lines changed across [cyan]{len(diffs)}[/cyan] PR(s)")
 
                 # 3. Analyze with Claude (parallel processing) - or skip if requested
                 if skip_analyze:
