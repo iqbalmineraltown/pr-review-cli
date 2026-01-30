@@ -10,7 +10,7 @@ from .config import Config
 
 
 class BitbucketClient:
-    """Client for interacting with Bitbucket API using App Password authentication"""
+    """Client for interacting with Bitbucket API using API Token authentication"""
 
     def __init__(
         self,
@@ -157,9 +157,52 @@ class BitbucketClient:
                 # So we need to fetch repositories first, then search each one
                 all_prs = []
 
-                # Get all repositories in workspace (paginated)
-                repos_data = await self._get(f"/repositories/{workspace}")
-                repositories = repos_data.get("values", [])
+                # Get all repositories in workspace (with proper pagination)
+                repositories = []
+                next_url = f"/repositories/{workspace}"
+                page_count = 0
+
+                while next_url:
+                    page_count += 1
+                    repos_data = await self._get(next_url)
+                    page_values = repos_data.get("values", [])
+                    repositories.extend(page_values)
+
+                    # Bitbucket API uses page/pagelen/size for pagination
+                    if "page" in repos_data:
+                        page = repos_data.get("page")
+                        pagelen = repos_data.get("pagelen")
+                        size = repos_data.get("size")
+
+                        if page and pagelen and size:
+                            if page * pagelen < size:
+                                # Calculate next page
+                                next_page = page + 1
+                                next_url = f"/repositories/{workspace}?page={next_page}&pagelen={pagelen}"
+                            else:
+                                # Last page reached
+                                next_url = None
+                        else:
+                            # No more pages
+                            next_url = None
+                    else:
+                        # Fallback: check for links.next (older API format)
+                        if "next" in repos_data.get("links", {}):
+                            next_link = repos_data["links"]["next"].get("href", "")
+                            if next_link:
+                                if next_link.startswith("http"):
+                                    from urllib.parse import urlparse
+                                    parsed = urlparse(next_link)
+                                    next_url = parsed.path
+                                    if parsed.query:
+                                        next_url = f"{next_url}?{parsed.query}"
+                                else:
+                                    next_url = next_link
+                            else:
+                                next_url = None
+                        else:
+                            # No more pages
+                            next_url = None
 
                 # Search for PRs in each repository
                 for repo in repositories:
@@ -202,8 +245,8 @@ class BitbucketClient:
                     )
             elif e.response.status_code == 401:
                 raise RuntimeError(
-                    "Authentication failed. Please check your OAuth credentials.\n"
-                    "Try running the oauth_helper.py again to get new tokens."
+                    "Authentication failed. Please check your API Token credentials.\n"
+                    "Verify PR_REVIEWER_BITBUCKET_EMAIL and PR_REVIEWER_BITBUCKET_API_TOKEN in ~/.pr-review-cli/.env"
                 )
             else:
                 raise
@@ -320,8 +363,8 @@ class BitbucketClient:
                 )
             elif e.response.status_code == 401:
                 raise RuntimeError(
-                    "Authentication failed. Please check your OAuth credentials.\n"
-                    "Try running the oauth_helper.py again to get new tokens."
+                    "Authentication failed. Please check your API Token credentials.\n"
+                    "Verify PR_REVIEWER_BITBUCKET_EMAIL and PR_REVIEWER_BITBUCKET_API_TOKEN in ~/.pr-review-cli/.env"
                 )
             else:
                 raise RuntimeError(f"Failed to fetch PR: {e}")

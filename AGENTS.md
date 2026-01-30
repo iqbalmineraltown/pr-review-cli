@@ -54,7 +54,7 @@ PR Review CLI is a sophisticated CLI tool that:
 ```
 
 ~/.pr-review-cli/                  # User config directory (auto-created)
-├── .env                           # App Password credentials (gitignored)
+├── .env                           # API Token credentials (gitignored)
 ├── prompts/                       # Custom analysis prompts
 │   ├── default.md                 # Auto-created
 │   ├── security-focused.md
@@ -68,7 +68,7 @@ PR Review CLI is a sophisticated CLI tool that:
 └── AGENTS.md                      # This file
 
 ~/.pr-review-cli/                  # User config directory (auto-created)
-├── .env                           # App Password credentials (gitignored)
+├── .env                           # API Token credentials (gitignored)
 ├── prompts/                       # Custom analysis prompts
 │   ├── default.md                 # Auto-created
 │   ├── security-focused.md
@@ -82,10 +82,10 @@ PR Review CLI is a sophisticated CLI tool that:
 
 ### 1. BitbucketClient (`bitbucket_client.py`)
 
-**Purpose:** Async HTTP client for Bitbucket API using App Password authentication
+**Purpose:** Async HTTP client for Bitbucket API using API Token authentication
 
 **Key Features:**
-- Basic authentication using App Passwords
+- Basic authentication using API Tokens
 - Supports workspace-wide PR search
 - Supports repository-specific PR search
 - Fetches PR diffs with statistics
@@ -243,7 +243,7 @@ Prompt content here...
 
 **Required Variables:**
 - `PR_REVIEWER_BITBUCKET_EMAIL` - Bitbucket email for authentication
-- `PR_REVIEWER_BITBUCKET_API_TOKEN` - App Password for authentication
+- `PR_REVIEWER_BITBUCKET_API_TOKEN` - API Token for authentication
 - `PR_REVIEWER_BITBUCKET_WORKSPACE` - Default workspace (optional but recommended)
 
 **Optional Variables:**
@@ -323,20 +323,20 @@ Prompt content here...
 
 ## Authentication
 
-This tool uses Bitbucket App Passwords for authentication.
+This tool uses Bitbucket API Tokens for authentication.
 
 ### Setup
 
-1. **Create App Password**
-   - Go to: https://bitbucket.org/account/settings/app-passwords/
-   - Create a new app password
+1. **Create API Token**
+   - Go to: https://bitbucket.org/account/settings/api-tokens/
+   - Create a new API Token
    - Select permissions:
      - Pull requests: Read
      - Repositories: Read
      - Account: Read (optional)
 
 2. **Configure `.env`**
-   - Add email and app password to `~/.pr-review-cli/.env`
+   - Add email and API Token to `~/.pr-review-cli/.env`
    - No helper scripts needed
 
 ### Security
@@ -344,7 +344,7 @@ This tool uses Bitbucket App Passwords for authentication.
 - `.env` file has permissions `600` (owner read/write only)
 - `.gitignore` prevents committing credentials
 - Stored in home directory, not project directory
-- App Passwords are officially recommended by Bitbucket for script/API access
+- API Tokens are officially recommended by Bitbucket for script/API access
 
 ## Workspace-Wide Search Feature
 
@@ -384,7 +384,7 @@ pr-review review myworkspace myrepo
 
 - ✅ Missing credentials with helpful setup instructions
 - ✅ Repository not found errors
-- ✅ Authentication failures (with OAuth refresh suggestion)
+- ✅ Authentication failures (with API Token verification guidance)
 - ✅ Timeout handling (Claude analysis, HTTP requests)
 - ✅ JSON parsing failures with fallback
 - ✅ Claude CLI not found detection
@@ -463,8 +463,13 @@ poetry run flake8 pr_review/
 1. Update relevant module in `pr_review/`
 2. Add tests to `tests/`
 3. Update documentation
-4. Test manually with real PRs
+4. **Test with `./run.sh review --skip-analyze -I` before asking user to verify**
 5. Commit with conventional commit message
+
+**Important:** Always test using `--skip-analyze -I` flags to:
+- Skip AI analysis (faster iteration)
+- Use non-interactive mode (easier to verify output)
+- Quickly validate functionality before involving the user
 
 ### Debugging
 
@@ -478,6 +483,19 @@ poetry run pr-review review workspace repo --verbose
 
 ## Testing
 
+### Quick Workflow Testing
+**Before asking the user to verify changes, always run:**
+```bash
+./run.sh review --skip-analyze -I
+```
+
+This command:
+- ✅ Skips AI analysis (fast iteration)
+- ✅ Uses non-interactive mode (easy to verify)
+- ✅ Shows actual output (can verify functionality)
+- ✅ Tests real API calls (validates integration)
+
+### Unit Tests
 Current test coverage:
 - `tests/test_priority_scorer.py` - Priority scoring logic
 
@@ -502,8 +520,8 @@ cat ~/.pr-review-cli/.env
 ```
 
 **Permission denied:**
-- Check App Password has required permissions
-- Create new App Password with: Pull requests (Read), Repositories (Read)
+- Check API Token has required permissions
+- Create new API Token with: Pull requests (Read), Repositories (Read)
 
 **Claude CLI not found:**
 ```bash
@@ -530,7 +548,7 @@ print('Workspace:', config.bitbucket_workspace)
 
 ## Key Design Decisions
 
-1. **App Password Authentication** - Simple, secure, recommended by Bitbucket for scripts
+1. **API Token Authentication** - Simple, secure, recommended by Bitbucket for scripts
 2. **Claude CLI Integration** - No separate API keys needed, uses existing setup
 3. **Workspace-Wide Search** - More convenient than per-repo commands
 4. **Parallel Processing** - Significantly faster analysis
@@ -564,7 +582,7 @@ Potential improvements:
 
 ### Security Considerations
 
-- Rotate App Passwords periodically
+- Rotate API Tokens periodically
 - Keep dependencies updated
 - Monitor Bitbucket API changes
 - Never commit `.env` files

@@ -50,7 +50,7 @@ htmlcov/
 test_*.py
 test_*.sh
 
-# User config directory (contains OAuth tokens and cache)
+# User config directory (contains API Token credentials and cache)
 .pr-review-cli/
 *.log
 *.log.*

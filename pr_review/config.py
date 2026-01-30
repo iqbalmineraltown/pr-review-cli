@@ -26,12 +26,12 @@ class Config:
 
     @property
     def bitbucket_email(self) -> Optional[str]:
-        """Get Bitbucket email for basic auth (App Password) from .env"""
+        """Get Bitbucket email for basic auth (API Token) from .env"""
         return os.getenv("PR_REVIEWER_BITBUCKET_EMAIL")
 
     @property
     def bitbucket_api_token(self) -> Optional[str]:
-        """Get Bitbucket API token for basic auth (App Password) from .env"""
+        """Get Bitbucket API token for basic auth (API Token) from .env"""
         return os.getenv("PR_REVIEWER_BITBUCKET_API_TOKEN")
 
     @property
@@ -67,8 +67,8 @@ class Config:
             print(f"✅ .env file exists at: {env_file}")
             print(f"   But it's missing required fields!\n")
 
-        print("2. Create an App Password at:")
-        print("   https://bitbucket.org/account/settings/app-passwords/\n")
+        print("2. Create an API Token at:")
+        print("   https://bitbucket.org/account/settings/api-tokens/\n")
         print("   Required permissions:")
         print("   ✅ Pull requests: Read")
         print("   ✅ Repositories: Read")

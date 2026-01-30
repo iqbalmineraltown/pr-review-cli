@@ -193,21 +193,20 @@ def review(
                         current_user = await client.get_current_user()
                         console.print(f"[green]✓[/green] Authenticated as [bold]{current_user.display_name}[/bold] ({current_user.username})")
                         user_uuid = current_user.uuid
-                        # Save UUID to config for next time
-                        console.print(f"[dim]💡 Tip: Run oauth_helper.py to save UUID to config for faster startup[/dim]")
+                        # Note: UUID could be saved to config for faster startup, but auto-detection works fine
                     except RuntimeError as e:
                         if "user_endpoint_not_accessible" in str(e):
                             console.print("\n[red]❌ Error:[/red] Cannot determine your identity.")
-                            console.print("Your OAuth token doesn't have the [cyan]account[/cyan] scope.")
-                            console.print("\nPlease re-run OAuth setup to get your UUID:")
-                            console.print(f"  [cyan]python3 oauth_helper.py {config.bitbucket_client_id or '<CLIENT_ID>'} {config.bitbucket_client_secret or '<CLIENT_SECRET>'}[/cyan]\n")
+                            console.print("Your API Token doesn't have the [cyan]Account: Read[/cyan] permission.")
+                            console.print("\nPlease update your API Token with these permissions:")
+                            console.print("  [cyan]Pull requests: Read, Repositories: Read, Account: Read[/cyan]\n")
                             raise typer.Exit(1)
                         elif "token_invalid_or_expired" in str(e):
-                            error_msg = str(e).split(":", 1)[1] if ":" in str(e) else "Token is invalid or expired"
+                            error_msg = str(e).split(":", 1)[1] if ":" in str(e) else "Authentication failed"
                             console.print("\n[red]❌ Authentication Error:[/red]")
                             console.print(f"[dim]{error_msg}[/dim]")
-                            console.print("\nPlease check your OAuth credentials or re-run:")
-                            console.print(f"  [cyan]python3 oauth_helper.py {config.bitbucket_client_id or '<CLIENT_ID>'} {config.bitbucket_client_secret or '<CLIENT_SECRET>'}[/cyan]\n")
+                            console.print("\nPlease check your API Token credentials in:")
+                            console.print(f"  [cyan]~/.pr-review-cli/.env[/cyan]\n")
                             raise typer.Exit(1)
                         else:
                             raise

@@ -20,8 +20,6 @@ classifiers = [
 ]
 packages = [
     { include = "pr_review" },
-    { include = "oauth_helper.py" },
-    { include = "refresh_token.py" },
 ]
 
 [tool.poetry.dependencies]

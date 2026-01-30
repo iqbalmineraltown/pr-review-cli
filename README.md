@@ -11,7 +11,7 @@ AI-powered pull request review assistant for Bitbucket.
 - ⚡ **Parallel Processing**: Analyzes multiple PRs concurrently
 - 🎨 **Custom Prompts**: Create your own analysis prompts
 - 🔍 **Large PR Handling**: Intelligently handles PRs too large for AI analysis
-- 🔐 **App Password Authentication**: Secure authentication using Bitbucket App Passwords
+- 🔐 **API Token Authentication**: Secure authentication using Bitbucket API Tokens
 - 🌐 **Workspace-Wide Search**: Search all repos in your workspace at once
 - ⏰ **Age-Based Prioritization**: Older PRs get higher priority to prevent bottlenecks
 
@@ -32,10 +32,10 @@ poetry install
 
 ## Quick Setup (2 Minutes)
 
-### Step 1: Create Bitbucket App Password
+### Step 1: Create Bitbucket API Token
 
 1. Go to: https://bitbucket.org/account/settings/app-passwords/
-2. Click "Create app password"
+2. Click "Create API Token"
 3. Give it a name (e.g., "pr-review-cli")
 4. Select these permissions:
    - ✅ **Pull requests**: Read
@@ -293,10 +293,10 @@ Your credentials lack one or more required privilege scopes.
 Required: ["repository:read"]
 ```
 
-This means your App Password is missing required permissions:
+This means your API Token is missing required permissions:
 
 1. Go to: https://bitbucket.org/account/settings/app-passwords/
-2. Create a new app password with these permissions:
+2. Create a new API Token with these permissions:
    - ✅ Pull requests: Read
    - ✅ Repositories: Read
    - ✅ Account: Read (optional)
@@ -334,22 +334,22 @@ export CLAUDE_CLI_PATH=/path/to/claude
 ## Requirements
 
 - Python 3.11+
-- Bitbucket App Password
+- Bitbucket API Token
 - Claude CLI installation
 - Active internet connection
 
 ## Authentication
 
-This tool uses Bitbucket App Passwords for authentication:
+This tool uses Bitbucket API Tokens for authentication:
 
-1. **Create App Password** at: https://bitbucket.org/account/settings/app-passwords/
+1. **Create API Token** at: https://bitbucket.org/account/settings/app-passwords/
 2. **Required Permissions**:
    - ✅ Pull requests: Read
    - ✅ Repositories: Read
    - ✅ Account: Read (optional)
-3. **Configure** your `.env` file with the email and app password
+3. **Configure** your `.env` file with the email and API Token
 
-App Passwords are:
+API Tokens are:
 - **Secure**: Works over HTTPS with proper authentication
 - **Simple**: No token expiration or refresh needed
 - **Recommended**: Bitbucket's official recommendation for script/API access
@@ -372,7 +372,7 @@ App Passwords are:
 - `.env` file has permissions `600` (owner read/write only)
 - `.gitignore` prevents committing credentials
 - Stored in home directory, not project directory
-- App Passwords are secure and recommended by Bitbucket
+- API Tokens are secure and recommended by Bitbucket
 
 ## Advanced Features
 
