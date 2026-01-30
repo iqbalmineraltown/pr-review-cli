@@ -76,9 +76,7 @@ class PRReviewApp(App):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("r", "refresh", "Refresh"),
         ("o", "open_in_browser", "Open in Browser"),
-        ("enter", "show_details", "Show Details"),
     ]
 
     def __init__(self, prs_with_priority: List[PRWithPriority]):
@@ -194,11 +192,6 @@ class PRReviewApp(App):
         """Open selected PR in browser"""
         if self.selected_pr:
             webbrowser.open(self.selected_pr.pr.link)
-
-    def action_show_details(self) -> None:
-        """Show details for currently selected row"""
-        table = self.query_one("#prs", PRDataTable)
-        table.action_select_cursor()
 
 
 def launch_interactive_tui(prs_with_priority: List[PRWithPriority]):
