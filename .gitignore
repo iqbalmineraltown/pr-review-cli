@@ -66,6 +66,10 @@ test_*
 __pycache__/
 *.pyc
 
+# Frontend
+pr-review-web/node_modules/
+pr_review/web/static/assets/
+
 # OS
 .DS_Store
 Thumbs.db

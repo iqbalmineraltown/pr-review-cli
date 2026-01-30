@@ -117,3 +117,18 @@ class Config:
     @property
     def git_timeout_seconds(self) -> int:
         return int(os.getenv("PR_REVIEWER_GIT_TIMEOUT", "300"))
+
+    @property
+    def web_host(self) -> str:
+        """Get web server host from .env"""
+        return os.getenv("PR_REVIEW_WEB_HOST", "127.0.0.1")
+
+    @property
+    def web_port(self) -> int:
+        """Get web server port from .env"""
+        return int(os.getenv("PR_REVIEW_WEB_PORT", "8000"))
+
+    @property
+    def web_reload(self) -> bool:
+        """Get web server auto-reload setting from .env"""
+        return os.getenv("PR_REVIEW_WEB_RELOAD", "true").lower() == "true"

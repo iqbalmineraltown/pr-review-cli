@@ -22,20 +22,16 @@ console = Console()
 
 @app.command()
 def review(
-    workspace: str = typer.Argument(None, help="Bitbucket workspace (default: from PR_REVIEWER_BITBUCKET_WORKSPACE env var)"),
-    repo: str = typer.Argument(None, help="Repository name (optional - if not specified, searches all repos in workspace)"),
-    pr_url: str = typer.Option(None, "--pr-url", help="Bitbucket PR URL to analyze (e.g., https://bitbucket.org/workspace/repo/pull-requests/123)"),
+    workspace: str = typer.Argument("", help="Bitbucket workspace (default: from PR_REVIEWER_BITBUCKET_WORKSPACE env var)"),
+    repo: str = typer.Argument("", help="Repository name (optional - if not specified, searches all repos in workspace)"),
+    pr_url: str = typer.Option("", "--pr-url", help="Bitbucket PR URL to analyze (e.g., https://bitbucket.org/workspace/repo/pull-requests/123)"),
     prompt: str = typer.Option("default", "--prompt", "-p", help="Custom prompt to use"),
     skip_analyze: bool = typer.Option(False, "--skip-analyze", help="Skip AI analysis and show PR summary only"),
-    interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i/-I"),
-    export: str = typer.Option(None, "--export", "-e", help="Export format: markdown/json"),
+    no_interactive: bool = typer.Option(False, "--no-interactive", help="Disable interactive mode"),
+    export: str = typer.Option("", "--export", "-e", help="Export format: markdown/json"),
     output: str = typer.Option("pr_report", "--output", "-o", help="Output file path"),
     max_prs: int = typer.Option(30, "--max-prs", "-m", help="Max PRs to analyze"),
-    local_diff: bool = typer.Option(
-        False,
-        "--local-diff/--api-diff",
-        help="Use local git cloning instead of API for diffs"
-    ),
+    local_diff: bool = typer.Option(False, "--local-diff", help="Use local git cloning instead of API for diffs"),
     git_cache_cleanup: bool = typer.Option(
         False,
         "--cleanup-git-cache",
@@ -60,13 +56,17 @@ def review(
     With --use-https, use HTTPS instead of SSH for git operations (requires --local-diff).
     """
 
+    # Convert no_interactive flag to interactive for internal use
+    interactive = not no_interactive
+
     # ========== SINGLE PR URL ANALYSIS ==========
     # Parse URL and auto-disable interactive mode if --pr-url is provided
     url_workspace = url_repo = url_pr_id = None
-    if pr_url:
+    if pr_url and pr_url.strip():
         # Automatically disable interactive mode for single PR analysis
+        interactive = not no_interactive
         if interactive:
-            interactive = False
+            no_interactive = True
             console.print("[dim]ℹ️  Single PR URL mode: automatically using non-interactive output[/dim]\n")
 
         # Parse the Bitbucket PR URL
@@ -100,7 +100,7 @@ def review(
 
             # Resolve workspace: use config default if not provided as argument
             target_workspace = workspace
-            if target_workspace is None:
+            if not target_workspace or not target_workspace.strip():
                 target_workspace = config.bitbucket_workspace
                 if not target_workspace:
                     env_file = config.config_dir / ".env"
@@ -336,6 +336,7 @@ def review(
                     prs_with_priority = scorer.score_prs(prs, analyses, diffs)
 
                 # 5. Present results
+                interactive = not no_interactive
                 if interactive:
                     # For TUI, we need to exit the async context first
                     return prs_with_priority
@@ -433,6 +434,46 @@ def cache_stats():
             console.print(f"\n  [dim]... and {len(sorted_authors) - 20} more authors[/dim]")
     else:
         console.print("[yellow]No author history cached yet[/yellow]")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+):
+    """
+    Start the web interface server.
+
+    Launches a FastAPI server with REST API and WebSocket support.
+    Access the web interface at http://localhost:8000
+
+    Examples:
+        pr-review serve                    # Start with default settings (127.0.0.1:8000)
+        pr-review serve --port 3000        # Use custom port
+        pr-review serve --host 0.0.0.0     # Listen on all interfaces
+    """
+    import asyncio
+
+    config = Config()
+    if not config.has_valid_credentials:
+        config._print_credentials_warning()
+        raise typer.Exit(1)
+
+    # Allow env vars to override defaults
+    server_host = host if host != "127.0.0.1" else config.web_host
+    server_port = port if port != 8000 else config.web_port
+
+    console.print(f"\n[cyan]🚀 Starting PR Review Web Server[/cyan]")
+    console.print(f"[dim]Server will run at:[/dim] http://{server_host}:{server_port}")
+    console.print(f"[dim]API documentation:[/dim] http://{server_host}:{server_port}/api/docs")
+    console.print(f"[dim]WebSocket endpoint:[/dim] ws://{server_host}:{server_port}/ws/analyze\n")
+
+    try:
+        from .web.server import start_server
+        asyncio.run(start_server(host=server_host, port=server_port))
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Server stopped[/yellow]")
+        raise typer.Exit(0)
 
 
 if __name__ == "__main__":

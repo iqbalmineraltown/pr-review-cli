@@ -109,7 +109,8 @@ class BitbucketClient:
         repo_slug: Optional[str] = None,
         user_uuid: Optional[str] = None,
         user_username: Optional[str] = None,
-        state: str = "OPEN"
+        state: str = "OPEN",
+        progress_callback: Optional[callable] = None
     ) -> List[BitbucketPR]:
         """
         Fetch PRs where the current user is listed as a reviewer.
@@ -123,6 +124,7 @@ class BitbucketClient:
             user_uuid: Current user's UUID (without braces) - preferred if available
             user_username: Current user's username - fallback if UUID not available
             state: PR state filter (default: OPEN)
+            progress_callback: Optional callback function(message) for progress updates
 
         Returns:
             List of BitbucketPR objects that the user has NOT yet responded to
@@ -162,11 +164,17 @@ class BitbucketClient:
                 next_url = f"/repositories/{workspace}"
                 page_count = 0
 
+                if progress_callback:
+                    await progress_callback(f"Fetching repositories from {workspace}...")
+
                 while next_url:
                     page_count += 1
                     repos_data = await self._get(next_url)
                     page_values = repos_data.get("values", [])
                     repositories.extend(page_values)
+
+                    if progress_callback:
+                        await progress_callback(f"Fetched {len(repositories)} repositories...")
 
                     # Bitbucket API uses page/pagelen/size for pagination
                     if "page" in repos_data:
@@ -205,10 +213,13 @@ class BitbucketClient:
                             next_url = None
 
                 # Search for PRs in each repository
-                for repo in repositories:
+                for idx, repo in enumerate(repositories):
                     repo_slug_from_api = repo.get("slug")
                     if not repo_slug_from_api:
                         continue
+
+                    if progress_callback:
+                        await progress_callback(f"Searching repo {idx + 1}/{len(repositories)}: {repo_slug_from_api}...")
 
                     try:
                         repo_prs_data = await self._get(
@@ -222,6 +233,9 @@ class BitbucketClient:
                             pr["repository"] = repo
 
                         all_prs.extend(repo_prs)
+
+                        if progress_callback and len(repo_prs) > 0:
+                            await progress_callback(f"Found {len(repo_prs)} PR(s) in {repo_slug_from_api}")
                     except httpx.HTTPStatusError as e:
                         # Skip repos we can't access (permissions, etc.)
                         if e.response.status_code != 403 and e.response.status_code != 404:

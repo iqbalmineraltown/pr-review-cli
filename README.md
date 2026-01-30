@@ -7,6 +7,7 @@ AI-powered pull request review assistant for Bitbucket.
 - 🤖 **AI-Powered Analysis**: Uses Claude to analyze PR diffs and extract insights
 - 🎯 **Smart Prioritization**: Automatically ranks PRs by risk and importance
 - 📊 **Interactive TUI**: Beautiful terminal UI for navigating PRs
+- 🌐 **Web Interface**: Modern Vue.js browser interface with real-time updates
 - 📝 **Multiple Export Formats**: Terminal, Markdown, and JSON reports
 - ⚡ **Parallel Processing**: Analyzes multiple PRs concurrently
 - 🎨 **Custom Prompts**: Create your own analysis prompts
@@ -14,6 +15,8 @@ AI-powered pull request review assistant for Bitbucket.
 - 🔐 **API Token Authentication**: Secure authentication using Bitbucket API Tokens
 - 🌐 **Workspace-Wide Search**: Search all repos in your workspace at once
 - ⏰ **Age-Based Prioritization**: Older PRs get higher priority to prevent bottlenecks
+- 🔄 **Real-Time Progress**: Watch analysis progress via WebSocket
+- 🎨 **Syntax Highlighting**: Code diffs with Prism.js highlighting
 
 ## Installation
 
@@ -152,6 +155,126 @@ pr-review prompts --list
 
 ```bash
 pr-review cache-stats
+```
+
+## Web Interface
+
+The PR Review CLI now includes a modern web interface for interactive PR review through your browser!
+
+### Starting the Web Server
+
+```bash
+# Start with default settings (http://localhost:8000)
+pr-review serve
+
+# Start on custom port
+pr-review serve --port 3000
+
+# Disable auto-reload (for production)
+pr-review serve --no-reload
+
+# Custom host and port
+pr-review serve --host 0.0.0.0 --port 8080
+```
+
+The web interface provides:
+- 🌐 **Modern Vue.js UI**: Beautiful, responsive interface
+- 📊 **Real-Time Progress**: Watch AI analysis progress live via WebSocket
+- 🔍 **Interactive Diff Viewer**: View code diffs with syntax highlighting
+- 🎯 **Same Features**: All CLI features available in the browser
+- ⚡ **Fast API**: RESTful API for programmatic access
+
+### Development Workflow
+
+**Backend (Python):**
+```bash
+# Terminal 1: Start FastAPI server with auto-reload
+pr-review serve --reload
+```
+
+**Frontend (Vue.js):**
+```bash
+# Terminal 2: Start Vite dev server
+cd pr-review-web && npm install && npm run dev
+```
+
+Access at: http://localhost:5173 (Vite dev server with API proxy)
+
+**Production Build:**
+```bash
+# Build Vue frontend
+cd pr-review-web && npm run build
+
+# Start server (serves built Vue app)
+pr-review serve --port 8000
+```
+
+### Web Interface Features
+
+1. **Dashboard**: View all PRs with priority scores and risk levels
+2. **Real-Time Analysis**: Watch Claude analyze PRs in real-time
+3. **Expandable Details**: Click any PR to see full analysis and code diff
+4. **Syntax Highlighting**: Diffs are highlighted with Prism.js
+5. **Color-Coded Risks**: Visual risk indicators (Critical/High/Medium/Low)
+6. **Bitbucket Integration**: One-click to open PRs in Bitbucket
+
+### API Endpoints
+
+When the web server is running, you can also use the REST API directly:
+
+```bash
+# List PRs
+curl http://localhost:8000/api/prs?workspace=myworkspace
+
+# Get PR details with diff
+curl http://localhost:8000/api/prs/123?workspace=myworkspace&repo=myrepo
+
+# Trigger analysis
+curl -X POST http://localhost:8000/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"workspace": "myworkspace", "prompt": "default"}'
+
+# Get configuration
+curl http://localhost:8000/api/config
+```
+
+### WebSocket Endpoint
+
+Connect to the WebSocket for real-time analysis progress:
+
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/analyze')
+
+// Subscribe to analysis updates
+ws.send(JSON.stringify({
+  action: 'subscribe',
+  analysis_id: 'uuid-from-analyze-endpoint'
+}))
+
+// Receive progress updates
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data)
+  if (message.type === 'progress') {
+    console.log(`${message.current}/${message.total}: ${message.status}`)
+  } else if (message.type === 'complete') {
+    console.log('Results:', message.results)
+  }
+}
+```
+
+### Web Server Configuration
+
+Add to your `~/.pr-review-cli/.env`:
+
+```bash
+# Web server host (default: 127.0.0.1)
+PR_REVIEW_WEB_HOST=127.0.0.1
+
+# Web server port (default: 8000)
+PR_REVIEW_WEB_PORT=8000
+
+# Enable auto-reload for development (default: true)
+PR_REVIEW_WEB_RELOAD=true
 ```
 
 ## Interactive TUI Shortcuts
