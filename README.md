@@ -14,6 +14,7 @@ AI-powered pull request review assistant for Bitbucket.
 - 🔐 **API Token Authentication**: Secure authentication using Bitbucket API Tokens
 - 🌐 **Workspace-Wide Search**: Search all repos in your workspace at once
 - ⏰ **Age-Based Prioritization**: Older PRs get higher priority to prevent bottlenecks
+- 💾 **Local Git Diff Mode**: Clone repos locally to bypass API limits and analyze PRs of any size
 
 ## Installation
 
@@ -142,6 +143,35 @@ pr-review review myworkspace -m 10
 pr-review review myworkspace --prompt security-focused
 ```
 
+### Local Git Diff Mode (Analyze Large PRs)
+
+By default, the tool uses the Bitbucket API to fetch diffs, which skips PRs larger than 50,000 characters. With `--local-diff`, repositories are cloned locally and diffs are generated using git, allowing analysis of PRs of **any size**.
+
+```bash
+# Use local git to generate diffs (bypasses size limits)
+pr-review review myworkspace --local-diff
+
+# Clean stale cached repositories before running
+pr-review review myworkspace --local-diff --cleanup-git-cache
+
+# Use HTTPS instead of SSH for git operations
+pr-review review myworkspace --local-diff --use-https
+
+# Analyze massive PRs that would be skipped in API mode
+pr-review review myworkspace myrepo --local-diff -m 50
+```
+
+**When to use `--local-diff`:**
+- 🔓 Analyzing PRs larger than 50K characters (automatically skipped in API mode)
+- 📊 Bulk analysis of many large PRs
+- ✈️ Offline analysis (after initial clone)
+- 🔄 Frequent reviews of the same repositories (cached repos speed up subsequent runs)
+
+**When to use API mode (default):**
+- ⚡ Quick reviews of small/medium PRs
+- 💾 Limited disk space
+- 🚫 No git installation available
+
 ### List Available Prompts
 
 ```bash
@@ -184,10 +214,16 @@ The system calculates a priority score (0-100) for each PR based on 7 factors:
 
 ### Special Case: Large PRs
 
+**In API mode (default):**
 PRs too large for AI analysis (>50K characters) automatically get:
 - **Score 90-100** (maximum priority)
 - Marked as "MANUAL REVIEW REQUIRED"
 - Diff size logged for reference
+
+**In local diff mode (`--local-diff`):**
+- **ALL PRs are analyzed regardless of size** - no 50K character limit!
+- Larger PRs may take longer to analyze but will receive full AI insights
+- Recommended for analyzing massive refactors or migrations
 
 ## Custom Prompts
 
@@ -331,6 +367,44 @@ print('Workspace:', config.bitbucket_workspace)
 export CLAUDE_CLI_PATH=/path/to/claude
 ```
 
+## Known Limitations
+
+### Bitbucket API Bug: Missing Pull Requests
+
+**Issue**: Due to a confirmed bug in Bitbucket Cloud's API, the tool may occasionally miss pull requests where you are listed as a reviewer.
+
+**Technical Details**:
+- The Bitbucket API query parameter `reviewers.uuid="YOUR_UUID"` is documented but **does not work reliably**
+- Some PRs are mysteriously absent from query results even though:
+  - The PR exists and is OPEN
+  - You ARE in the reviewers array with the exact UUID
+  - The PR can be fetched directly by ID
+- This is a **known Bitbucket Cloud API bug** affecting multiple tools
+
+**Evidence**:
+- [BCLOUD-20706](https://jira.atlassian.com/browse/BCLOUD-20706) - Official Atlassian JIRA bug for UUID-related API issues
+- [Community Discussion](https://community.developer.atlassian.com/t/how-to-find-all-pull-requests-on-which-i-am-a-reviewer/34704) - Users confirm reviewer filters return incomplete results
+- [Renovate Bot Issues](https://github.com/renovatebot/renovate/issues/14716) - Popular dependency bot struggles with same bug
+
+**Impact**:
+- Most users will not notice this issue
+- When it occurs, 1-2 PRs may be missing from results
+- The issue is **intermittent** and PR-specific
+
+**Workaround**:
+If you suspect missing PRs, you can verify manually:
+```bash
+# Compare with Bitbucket web UI
+# 1. Go to: https://bitbucket.org/<workspace>/<repo>/pull-requests
+# 2. Filter by "Reviewer: Me"
+# 3. Check if any PRs are missing from CLI output
+```
+
+**Future Fix**:
+We are monitoring for Bitbucket API fixes and will implement a fallback mechanism (fetching all PRs and filtering client-side) once the issue is resolved or if community demand increases.
+
+**Status**: documented, monitoring for API fixes
+
 ## Requirements
 
 - Python 3.11+
@@ -375,6 +449,76 @@ API Tokens are:
 - API Tokens are secure and recommended by Bitbucket
 
 ## Advanced Features
+
+### Local Git Diff Mode vs API Mode
+
+The tool supports two modes for fetching PR diffs:
+
+| Feature | API Mode (Default) | Local Git Mode (`--local-diff`) |
+|---------|-------------------|--------------------------------|
+| **Setup time** | ~1 second | 10 seconds - 5 minutes (first clone) |
+| **Diff size limit** | 50K characters (larger PRs skipped) | ♾️ No limit - analyze PRs of any size |
+| **Rate limits** | Yes (Bitbucket API limits) | No (after cloning) |
+| **Disk usage** | ~0 MB | 100 MB - 10 GB (cached repos) |
+| **Offline capable** | No (requires internet) | Yes (after initial clone) |
+| **Best for** | Quick daily reviews, small PRs | Large PRs, bulk analysis, offline work |
+| **Network usage** | Low (diffs only) | High (full clone first time) |
+
+#### API Mode (Default)
+
+```bash
+pr-review review workspace repo
+```
+
+**Pros:**
+- ⚡ Faster for small/medium PRs (< 50K chars)
+- 💾 No disk usage (doesn't cache repos)
+- 🌐 Works with read-only API access
+- 🔁 Can fetch multiple PRs in parallel via API
+
+**Cons:**
+- 🚫 Skips PRs larger than 50K characters
+- ⏱️ Subject to API rate limits
+- 📡 Requires internet connection
+
+#### Local Git Mode
+
+```bash
+pr-review review workspace repo --local-diff
+```
+
+**Pros:**
+- 🔓 **Analyze PRs of ANY size** - no 50K character limit!
+- 🚫 No API rate limits for diffs
+- ✈️ Works offline after initial clone
+- 💨 Faster for repeated reviews (cached repos)
+- 📊 Full repository context available
+
+**Cons:**
+- 🐌 Slower initial setup (must clone repo)
+- 💾 Uses disk space for cached repos
+- 🔧 Requires git installation
+- 🔑 Needs SSH/HTTPS access to repos
+
+#### Cache Management
+
+Local git repositories are cached in `~/.pr-review-cli/cache/`:
+
+```bash
+# Clean stale cached repositories before running
+pr-review review workspace --local-diff --cleanup-git-cache
+
+# Manually view cache size
+du -sh ~/.pr-review-cli/cache/
+
+# Manually clear all cached repos (start fresh)
+rm -rf ~/.pr-review-cli/cache/*
+```
+
+The cache includes:
+- Cloned repositories (one per repo you've reviewed)
+- Author PR history (for scoring)
+- Automatic cleanup of repos older than 30 days
 
 ### Workspace-Wide Search
 

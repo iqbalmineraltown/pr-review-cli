@@ -69,13 +69,20 @@ Do not include any other text outside the JSON.'''
         self,
         pr: BitbucketPR,
         diff: str,
-        max_diff_size: int = 50000
+        max_diff_size: int = 50000,
+        skip_large: bool = True
     ) -> PRAnalysis:
         """
         Analyze a PR using Claude CLI via subprocess.
+
+        Args:
+            pr: The PR to analyze
+            diff: The diff content
+            max_diff_size: Maximum size before skipping (only used if skip_large=True)
+            skip_large: If False, analyze all PRs regardless of size (e.g., for local diffs)
         """
-        # Check if PR is too large for AI analysis
-        if len(diff) > max_diff_size:
+        # Check if PR is too large for AI analysis (only if skip_large=True)
+        if skip_large and len(diff) > max_diff_size:
             return PRAnalysis(
                 pr_id=pr.id,
                 good_points=["Large PR requiring detailed manual review"],
@@ -232,7 +239,8 @@ Do not include any other text outside the JSON.'''
         self,
         prs: List[BitbucketPR],
         diffs: List[str],
-        progress_callback=None
+        progress_callback=None,
+        skip_large: bool = True
     ) -> List[PRAnalysis]:
         """
         Analyze multiple PRs in parallel using Claude CLI.
@@ -241,6 +249,7 @@ Do not include any other text outside the JSON.'''
             prs: List of PRs to analyze
             diffs: List of diff contents
             progress_callback: Optional callback function(current, total, pr_title)
+            skip_large: If False, analyze all PRs regardless of size (e.g., for local diffs)
         """
         semaphore = asyncio.Semaphore(3)  # Max 3 concurrent CLI calls
         completed_count = [0]  # Use list to make it mutable in closure
@@ -248,7 +257,7 @@ Do not include any other text outside the JSON.'''
 
         async def analyze_with_semaphore(index, pr, diff):
             async with semaphore:
-                analysis = await self.analyze_pr(pr, diff)
+                analysis = await self.analyze_pr(pr, diff, skip_large=skip_large)
                 completed_count[0] += 1
 
                 # Call progress callback if provided

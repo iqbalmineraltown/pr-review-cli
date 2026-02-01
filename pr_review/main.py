@@ -322,10 +322,15 @@ def review(
                         status.update(f"[cyan]Analyzing PR {current}/{total}:[/cyan] {truncated_title}")
 
                     try:
+                        # For local diffs, analyze all PRs regardless of size
+                        # For API diffs, skip large PRs (>50K chars)
+                        skip_large = not local_diff
+
                         analyses = await analyzer.analyze_prs_parallel(
                             prs,
                             diff_contents,
-                            progress_callback=update_progress
+                            progress_callback=update_progress,
+                            skip_large=skip_large
                         )
                     finally:
                         status.stop()
