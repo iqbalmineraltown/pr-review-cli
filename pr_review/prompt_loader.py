@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 from typing import List, Dict, Optional
 import frontmatter  # For parsing markdown with metadata
@@ -14,13 +15,30 @@ class PromptLoader:
         self.prompts_dir = self.config_dir / "prompts"
         self._ensure_directories()
 
+    def _get_project_prompts_dir(self) -> Path:
+        """Get the path to the project's prompts directory"""
+        # Get the directory where this module is located
+        module_dir = Path(__file__).parent.parent
+        project_prompts_dir = module_dir / "prompts"
+        return project_prompts_dir
+
     def _ensure_directories(self):
-        """Create config directories if they don't exist"""
+        """Create config directories and copy default prompts if they don't exist"""
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create default prompt if missing
-        default_prompt_path = self.prompts_dir / "default.md"
-        if not default_prompt_path.exists():
+        # Copy prompts from project's prompts folder if user's prompts dir is empty or missing prompts
+        project_prompts_dir = self._get_project_prompts_dir()
+
+        if project_prompts_dir.exists():
+            # Copy each .md prompt that doesn't exist in user's config
+            for prompt_file in project_prompts_dir.glob("*.md"):
+                target_path = self.prompts_dir / prompt_file.name
+                if not target_path.exists():
+                    shutil.copy2(prompt_file, target_path)
+
+        # Fallback: create default prompt if project prompts dir doesn't exist or is empty
+        if not any(self.prompts_dir.glob("*.md")):
+            default_prompt_path = self.prompts_dir / "default.md"
             self._create_default_prompt(default_prompt_path)
 
     def _create_default_prompt(self, path: Path):
