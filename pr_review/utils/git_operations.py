@@ -195,36 +195,68 @@ class GitOperations:
         Raises:
             GitCommandError: If diff generation fails
         """
-        # Build the revision range for diff
-        # Using ... (triple dot) for merge base comparison
-        # This shows only the changes unique to source_branch
-        revision_range = f"origin/{destination_branch}...origin/{source_branch}"
-
-        # Get the unified diff
-        diff_cmd = [
-            "git",
-            "--git-dir", str(repo_path),
-            "diff",
-            f"--unified={context_lines}",
-            revision_range
+        # Try different revision range syntaxes
+        # 1. First try triple-dot (merge base) for cleaner diffs
+        # 2. Fall back to double-dot if merge base doesn't exist
+        revision_ranges = [
+            f"origin/{destination_branch}...origin/{source_branch}",  # Merge base (preferred)
+            f"origin/{destination_branch}..origin/{source_branch}",    # Direct comparison (fallback)
+            f"refs/heads/{destination_branch}...refs/heads/{source_branch}",  # Direct refs (fallback 2)
+            f"refs/heads/{destination_branch}..refs/heads/{source_branch}",    # Direct refs direct (fallback 3)
         ]
 
-        diff_output, _ = await self._run_command(diff_cmd, timeout=self.timeout_seconds)
-        diff_content = diff_output
+        last_error = None
+        for revision_range in revision_ranges:
+            try:
+                # Get the unified diff
+                diff_cmd = [
+                    "git",
+                    "--git-dir", str(repo_path),
+                    "diff",
+                    f"--unified={context_lines}",
+                    revision_range
+                ]
 
-        # Get statistics using --numstat for accurate counts
-        stat_cmd = [
-            "git",
-            "--git-dir", str(repo_path),
-            "diff",
-            "--numstat",
-            revision_range
-        ]
+                diff_output, _ = await self._run_command(diff_cmd, timeout=self.timeout_seconds)
+                diff_content = diff_output
 
-        stat_output, _ = await self._run_command(stat_cmd, timeout=self.timeout_seconds)
-        additions, deletions, files_changed = self._parse_diff_stats(stat_output)
+                # Get statistics using --numstat for accurate counts
+                stat_cmd = [
+                    "git",
+                    "--git-dir", str(repo_path),
+                    "diff",
+                    "--numstat",
+                    revision_range
+                ]
 
-        return diff_content, additions, deletions, files_changed
+                stat_output, _ = await self._run_command(stat_cmd, timeout=self.timeout_seconds)
+                additions, deletions, files_changed = self._parse_diff_stats(stat_output)
+
+                logger.debug(f"Successfully generated diff using: {revision_range}")
+                return diff_content, additions, deletions, files_changed
+
+            except GitCommandError as e:
+                last_error = e
+                logger.debug(f"Failed to generate diff with '{revision_range}': {e.error}")
+                # Try next syntax
+                continue
+
+        # All syntaxes failed - raise the last error with helpful message
+        error_msg = last_error.error if last_error else "Unknown error"
+        raise GitCommandError(
+            command="git diff",
+            exit_code=last_error.exit_code if last_error else 1,
+            output="",
+            error=(
+                f"Failed to generate diff between {destination_branch} and {source_branch}.\n"
+                f"This could mean:\n"
+                f"  • One or both branches don't exist in the repository\n"
+                f"  • The branches have completely diverged with no common history\n"
+                f"  • The repository wasn't fetched properly\n\n"
+                f"Try running with --cleanup-git-cache to re-clone the repository.\n"
+                f"Git error: {error_msg}"
+            )
+        )
 
     @staticmethod
     def _parse_diff_stats(numstat_output: str) -> Tuple[int, int, List[str]]:
