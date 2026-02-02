@@ -86,8 +86,14 @@ class Config:
         return os.getenv("BITBUCKET_BASE_URL", "https://api.bitbucket.org/2.0")
 
     @property
-    def claude_cli_path(self) -> str:
-        return os.getenv("CLAUDE_CLI_PATH", "claude")
+    def claude_cli_command(self) -> str:
+        """Command to execute Claude CLI. Receives prompt via stdin."""
+        return os.getenv("CLAUDE_CLI_COMMAND", "claude")
+
+    @property
+    def claude_cli_flags(self) -> str:
+        """Flags to pass to Claude CLI for JSON output."""
+        return os.getenv("CLAUDE_CLI_FLAGS", "-p --output-format json")
 
     @property
     def cache_dir(self) -> Path:

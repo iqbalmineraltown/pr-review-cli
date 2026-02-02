@@ -16,6 +16,13 @@ AI-powered pull request review assistant for Bitbucket.
 - ⏰ **Age-Based Prioritization**: Older PRs get higher priority to prevent bottlenecks
 - 💾 **Local Git Diff Mode**: Clone repos locally to bypass API limits and analyze PRs of any size
 
+## Prerequisites
+
+- **Claude Code CLI**: This tool requires [Claude Code CLI](https://claude.ai/code) to be installed and configured. Install it with:
+  ```bash
+  npm install -g @anthropic-ai/claude-code
+  ```
+
 ## Installation
 
 ### Option 1: Install from PyPI (Recommended)
@@ -96,8 +103,12 @@ PR_REVIEWER_BITBUCKET_WORKSPACE=your_workspace  # Optional but recommended
 
 **Optional Variables:**
 ```bash
-# Path to Claude CLI (default: "claude")
-CLAUDE_CLI_PATH=/custom/path/to/claude
+# Claude CLI command (default: "claude")
+CLAUDE_CLI_COMMAND=claude
+
+# Claude CLI flags for JSON output
+# Default: "-p --output-format json"
+# CLAUDE_CLI_FLAGS=-p --output-format json
 
 # Bitbucket API base URL (default: https://api.bitbucket.org/2.0)
 BITBUCKET_BASE_URL=https://api.bitbucket.org/2.0
@@ -105,6 +116,75 @@ BITBUCKET_BASE_URL=https://api.bitbucket.org/2.0
 # Cache directory (default: ~/.pr-review-cli/cache)
 CACHE_DIR=/custom/cache/directory
 ```
+
+### AI CLI Configuration
+
+This tool uses the [Claude Code CLI](https://claude.ai/code) for AI analysis. You can configure it to use either the official Anthropic API or a compatible proxy (like GLM).
+
+#### Option 1: Official Anthropic Claude API (Default)
+
+Uses the official Anthropic API directly. No special configuration needed:
+
+```bash
+# ~/.pr-review-cli/.env
+CLAUDE_CLI_COMMAND=claude
+CLAUDE_CLI_FLAGS=-p --output-format json
+```
+
+**Requirements:**
+- Valid Anthropic API key in `~/.claude/settings.json`
+- Default `ANTHROPIC_BASE_URL` pointing to `https://api.anthropic.com`
+
+#### Option 2: GLM API Proxy
+
+If you're using a GLM proxy (like `https://api.z.ai/api/anthropic`), you must specify the model:
+
+```bash
+# ~/.pr-review-cli/.env
+CLAUDE_CLI_COMMAND=claude
+CLAUDE_CLI_FLAGS=--model opus -p --output-format json
+```
+
+**Why `--model opus` is required for GLM:**
+- GLM API expects model aliases like `opus`, `sonnet`
+- Without this flag, Claude CLI uses full model IDs (e.g., `claude-sonnet-4-5-20250929`) which GLM doesn't recognize
+- This causes "Unknown Model" errors
+
+**Your Claude Code settings** (`~/.claude/settings.json`) with GLM proxy:
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "your-glm-api-key",
+    "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"
+  }
+}
+```
+
+#### Testing Your Configuration
+
+Verify your AI CLI setup works:
+
+```bash
+# Test without PR Review CLI
+echo "test" | claude -p --output-format json
+```
+
+Expected output (success):
+```json
+{"type":"result","result":"...","session_id":"..."}
+```
+
+Expected output (error - means model is wrong):
+```json
+{"type":"result","result":"API Error: 400 {\"error\":{\"code\":\"1211\",\"message\":\"Unknown Model\"}..."}
+```
+
+#### Quick Reference
+
+| Setup | CLAUDE_CLI_FLAGS |
+|-------|------------------|
+| **Official Anthropic API** | `-p --output-format json` |
+| **GLM Proxy** | `--model opus -p --output-format json` |
 
 ## Usage
 
@@ -363,9 +443,48 @@ print('Workspace:', config.bitbucket_workspace)
 ### Claude CLI not found?
 
 ```bash
-# Specify custom path
-export CLAUDE_CLI_PATH=/path/to/claude
+# Specify custom command
+export CLAUDE_CLI_COMMAND=claude
+# or use a different AI CLI
+export CLAUDE_CLI_COMMAND=openai
 ```
+
+### "Unknown Model" or "AI analysis failed" errors?
+
+If you see errors like:
+```
+API Error: 400 {"error":{"code":"1211","message":"Unknown Model, please check the model code."}}
+```
+
+Or:
+```
+Failed to parse GLM response content
+```
+
+This means your AI CLI is configured to use a model that your API provider doesn't recognize.
+
+**If using GLM proxy:**
+1. Check your `~/.claude/settings.json` for `ANTHROPIC_BASE_URL`
+2. If it points to a proxy (like `https://api.z.ai/api/anthropic`), add the model flag:
+   ```bash
+   # In ~/.pr-review-cli/.env
+   CLAUDE_CLI_FLAGS=--model opus -p --output-format json
+   ```
+
+**If using official Anthropic API:**
+1. Ensure `ANTHROPIC_BASE_URL` is `https://api.anthropic.com` in `~/.claude/settings.json`
+2. Remove any custom model flags from `CLAUDE_CLI_FLAGS`:
+   ```bash
+   # In ~/.pr-review-cli/.env
+   CLAUDE_CLI_FLAGS=-p --output-format json
+   ```
+
+**Test your configuration:**
+```bash
+echo "test" | claude -p --output-format json
+```
+
+If this returns a JSON object (not an error), your setup is correct.
 
 ## Known Limitations
 

@@ -44,26 +44,9 @@ Do not include any other text outside the JSON.'''
 
     def __init__(self, claude_cli_path: str = None, prompt_template: str = None):
         config = Config()
-        self.claude_cli_path = claude_cli_path or config.claude_cli_path
+        self.claude_cli_command = config.claude_cli_command
+        self.claude_cli_flags = config.claude_cli_flags
         self.prompt_template = prompt_template or self.DEFAULT_PROMPT
-        self._verify_claude_cli()
-
-    def _verify_claude_cli(self):
-        """Verify Claude CLI is available and configured"""
-        try:
-            result = subprocess.run(
-                [self.claude_cli_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode != 0:
-                raise RuntimeError("Claude CLI not found or not configured")
-        except FileNotFoundError:
-            raise RuntimeError(
-                f"Claude CLI not found at '{self.claude_cli_path}'.\n"
-                "Please install Claude CLI or ensure it's in your PATH."
-            )
 
     async def analyze_pr(
         self,
@@ -137,7 +120,10 @@ Do not include any other text outside the JSON.'''
                 raise ValueError("No JSON found in Claude output")
 
             json_str = output[json_start:json_end]
-            analysis_data = json.loads(json_str)
+            parsed_json = json.loads(json_str)
+
+            # Handle GLM format which wraps response in {"type": "result", "result": "..."}
+            analysis_data = self._extract_analysis_data(parsed_json)
 
             return PRAnalysis(
                 pr_id=pr.id,
@@ -186,54 +172,83 @@ Do not include any other text outside the JSON.'''
                 pass
 
     async def _run_claude_analysis(self, prompt: str, prompt_file: str) -> str:
-        """Run Claude CLI analysis with retry logic"""
+        """Run Claude CLI analysis via shell command"""
         loop = asyncio.get_event_loop()
 
-        # Try multiple command patterns
-        commands = [
-            # Pattern 1: claude ask (if available)
-            [self.claude_cli_path, "ask", "--file", prompt_file, "--non-interactive"],
-            # Pattern 2: claude with stdin
-            None,  # Will use stdin
-        ]
+        cmd = f"{self.claude_cli_command} {self.claude_cli_flags}"
+        cmd = cmd.replace("{prompt_file}", prompt_file)
+        cmd = cmd.replace("{prompt}", prompt)
 
-        for cmd in commands:
+        print(f"🤖 Running AI command: {cmd}")
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    input=prompt,
+                    check=False
+                )
+            )
+            if result.stdout.strip():
+                return result.stdout
+            elif result.stderr.strip():
+                return result.stderr
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Claude CLI command timed out")
+        except Exception as e:
+            raise RuntimeError(f"Failed to invoke Claude CLI command: {e}")
+
+        raise RuntimeError("Claude CLI command produced no output")
+
+    def _extract_analysis_data(self, parsed_json: dict) -> dict:
+        """
+        Extract analysis data from either GLM or Claude CLI format.
+
+        GLM format: {"type": "result", "result": "```json\\n{actual_data}\\n```", ...}
+        Claude CLI format: {"good_points": [...], "attention_required": [...], ...}
+
+        Args:
+            parsed_json: The parsed JSON output from the AI CLI
+
+        Returns:
+            dict with keys: good_points, attention_required, risk_factors, etc.
+        """
+        # Check if this is GLM format (has "type" and "result" keys)
+        if "type" in parsed_json and "result" in parsed_json:
+            # GLM format - extract from "result" field
+            result_content = parsed_json.get("result", "")
+
+            # Strip markdown code blocks (```json...```)
+            if result_content.startswith("```json"):
+                result_content = result_content[7:]  # Remove ```json
+            elif result_content.startswith("```"):
+                result_content = result_content[3:]  # Remove ```
+
+            if result_content.endswith("```"):
+                result_content = result_content[:-3]  # Remove trailing ```
+
+            result_content = result_content.strip()
+
+            # Parse the inner JSON
             try:
-                if cmd:
-                    result = await loop.run_in_executor(
-                        None,
-                        lambda: subprocess.run(
-                            cmd,
-                            capture_output=True,
-                            text=True,
-                            timeout=120,
-                            check=False
-                        )
-                    )
-                    if result.stdout.strip():
-                        return result.stdout
-                else:
-                    # Fallback: use stdin
-                    result = await loop.run_in_executor(
-                        None,
-                        lambda: subprocess.run(
-                            [self.claude_cli_path],
-                            capture_output=True,
-                            text=True,
-                            timeout=120,
-                            input=prompt,
-                            check=False
-                        )
-                    )
-                    if result.stdout.strip():
-                        return result.stdout
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                continue
-            except Exception:
-                continue
+                return json.loads(result_content)
+            except json.JSONDecodeError:
+                # If inner JSON parsing fails, return empty analysis
+                return {
+                    "good_points": [],
+                    "attention_required": [f"Failed to parse GLM response content: {result_content[:100]}"],
+                    "risk_factors": ["GLM parsing error"],
+                    "overall_quality_score": 50,
+                    "estimated_review_time": "30min"
+                }
 
-        # If all patterns fail, raise error
-        raise RuntimeError("Failed to invoke Claude CLI")
+        # Standard Claude CLI format - return as-is
+        return parsed_json
 
     async def analyze_prs_parallel(
         self,

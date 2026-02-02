@@ -248,9 +248,12 @@ Prompt content here...
 
 **Optional Variables:**
 - `PR_REVIEWER_BITBUCKET_USER_UUID` - Cached user UUID (auto-populated)
-- `CLAUDE_CLI_PATH` - Path to Claude CLI (default: "claude")
+- `CLAUDE_CLI_COMMAND` - Command to invoke Claude CLI (default: "claude")
+- `CLAUDE_CLI_FLAGS` - Flags for JSON output (default: "-p --output-format json")
 - `BITBUCKET_BASE_URL` - API base URL
 - `CACHE_DIR` - Cache directory path
+
+**Note:** This app assumes you're using Claude Code CLI (https://claude.ai/code). The flags `-p --output-format json` are automatically added to the command.
 
 **Key Methods:**
 - `has_valid_credentials` - Check if valid credentials exist
@@ -526,7 +529,7 @@ cat ~/.pr-review-cli/.env
 **Claude CLI not found:**
 ```bash
 # Specify custom path
-export CLAUDE_CLI_PATH=/path/to/claude
+export CLAUDE_CLI_COMMAND=/path/to/claude
 ```
 
 **Large PRs timing out:**
