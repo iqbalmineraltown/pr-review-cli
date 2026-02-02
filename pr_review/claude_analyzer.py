@@ -32,13 +32,7 @@ Diff:
 {diff}
 
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{{
-  "good_points": ["point1", "point2"],
-  "attention_required": ["issue1", "issue2"],
-  "risk_factors": ["risk1", "risk2"],
-  "overall_quality_score": 85,
-  "estimated_review_time": "15min"
-}}
+{{{{"good_points": ["point1", "point2"], "attention_required": ["issue1", "issue2"], "risk_factors": ["risk1", "risk2"], "overall_quality_score": 85, "estimated_review_time": "15min"}}}}
 
 Do not include any other text outside the JSON.'''
 
@@ -47,6 +41,13 @@ Do not include any other text outside the JSON.'''
         self.claude_cli_command = config.claude_cli_command
         self.claude_cli_flags = config.claude_cli_flags
         self.prompt_template = prompt_template or self.DEFAULT_PROMPT
+        self._print_config_shown = False
+
+    def _print_ai_config_once(self):
+        """Print AI CLI config once"""
+        if not hasattr(self, '_config_shown'):
+            print(f"🤖 AI CLI: {self.claude_cli_command} {self.claude_cli_flags}")
+            self._config_shown = True
 
     async def analyze_pr(
         self,
@@ -149,7 +150,7 @@ Do not include any other text outside the JSON.'''
                 _skipped_reason="timeout",
                 _diff_size=len(diff)
             )
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError, RuntimeError) as e:
             # Fallback analysis if parsing fails
             return PRAnalysis(
                 pr_id=pr.id,
@@ -178,8 +179,6 @@ Do not include any other text outside the JSON.'''
         cmd = f"{self.claude_cli_command} {self.claude_cli_flags}"
         cmd = cmd.replace("{prompt_file}", prompt_file)
         cmd = cmd.replace("{prompt}", prompt)
-
-        print(f"🤖 Running AI command: {cmd}")
 
         try:
             result = await loop.run_in_executor(
@@ -219,7 +218,7 @@ Do not include any other text outside the JSON.'''
             dict with keys: good_points, attention_required, risk_factors, etc.
         """
         # Check if this is GLM format (has "type" and "result" keys)
-        if "type" in parsed_json and "result" in parsed_json:
+        if isinstance(parsed_json, dict) and "type" in parsed_json and "result" in parsed_json:
             # GLM format - extract from "result" field
             result_content = parsed_json.get("result", "")
 
@@ -237,11 +236,11 @@ Do not include any other text outside the JSON.'''
             # Parse the inner JSON
             try:
                 return json.loads(result_content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 # If inner JSON parsing fails, return empty analysis
                 return {
                     "good_points": [],
-                    "attention_required": [f"Failed to parse GLM response content: {result_content[:100]}"],
+                    "attention_required": [f"Failed to parse GLM response: {str(e)[:100]}"],
                     "risk_factors": ["GLM parsing error"],
                     "overall_quality_score": 50,
                     "estimated_review_time": "30min"
@@ -266,6 +265,9 @@ Do not include any other text outside the JSON.'''
             progress_callback: Optional callback function(current, total, pr_title)
             skip_large: If False, analyze all PRs regardless of size (e.g., for local diffs)
         """
+        # Print AI config once
+        self._print_ai_config_once()
+
         semaphore = asyncio.Semaphore(3)  # Max 3 concurrent CLI calls
         completed_count = [0]  # Use list to make it mutable in closure
         total = len(prs)

@@ -81,7 +81,7 @@ Score ranges:
 Respond ONLY with valid JSON (no markdown, no explanation outside JSON):
 
 ```json
-{
+{{
   "good_points": [
     "Well-structured error handling",
     "Proper input validation prevents injection attacks",
@@ -99,7 +99,7 @@ Respond ONLY with valid JSON (no markdown, no explanation outside JSON):
   "overall_quality_score": 65,
   "estimated_review_time": "45min",
   "review_summary": "This PR implements required features but has critical security vulnerabilities that must be addressed before merge. Code quality is generally good with room for improvement in test coverage."
-}
+}}
 ```
 
 Provide constructive, actionable feedback.
