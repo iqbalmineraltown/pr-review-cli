@@ -37,20 +37,23 @@ PR Review CLI is a sophisticated CLI tool that:
 │   ├── claude_analyzer.py         # Claude CLI integration
 │   ├── priority_scorer.py         # Risk scoring logic
 │   ├── prompt_loader.py           # Custom prompt/skills loader
+│   ├── git_diff_manager.py        # Local git diff management
 │   ├── presenters/
 │   │   ├── __init__.py
 │   │   ├── interactive_tui.py     # Textual TUI interface
 │   │   └── report_generator.py    # Static report generation
 │   └── utils/
 │       ├── __init__.py
-│       └── paths.py               # Path management utilities
+│       ├── paths.py               # Path management utilities
+│       └── git_operations.py      # Git command wrappers
 ├── tests/
 │   ├── __init__.py
 │   └── test_priority_scorer.py
 ├── pyproject.toml                 # Dependencies & Poetry config
 ├── .env.example                   # Environment variables template
 ├── .gitignore                     # Git ignore patterns
-└── README.md                      # User documentation
+├── README.md                      # User documentation
+└── AGENTS.md                      # This file
 ```
 
 ~/.pr-review-cli/                  # User config directory (auto-created)
@@ -61,21 +64,9 @@ PR Review CLI is a sophisticated CLI tool that:
 │   ├── performance-review.md
 │   └── quick-scan.md
 └── cache/                         # Cached data
-    └── author_history.json        # Author PR history cache
-├── .env.example                   # Environment variables template
-├── .gitignore                     # Git ignore patterns
-├── README.md                      # User documentation
-└── AGENTS.md                      # This file
-
-~/.pr-review-cli/                  # User config directory (auto-created)
-├── .env                           # API Token credentials (gitignored)
-├── prompts/                       # Custom analysis prompts
-│   ├── default.md                 # Auto-created
-│   ├── security-focused.md
-│   ├── performance-review.md
-│   └── quick-scan.md
-└── cache/                         # Cached data
-    └── author_history.json        # Author PR history cache
+    ├── git_repos/                # Cloned repositories (for --local-diff mode)
+    │   └── workspace/            # Bare git repositories
+    └── author_history.json       # Author PR history cache
 ```
 
 ## Core Components
@@ -102,14 +93,19 @@ GET /repositories/{workspace}/{repo_slug}/pullrequests?q=reviewers.uuid="{uuid}"
 # Get PR diff
 GET /repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/diff
 
+# Get single PR by ID
+GET /repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}
+
 # Get user info
 GET /user
 ```
 
 **Key Methods:**
-- `fetch_prs_assigned_to_me(workspace, repo_slug=None)` - Fetch PRs (workspace-wide or repo-specific)
+- `fetch_prs_assigned_to_me(workspace, repo_slug, user_uuid, user_username)` - Fetch PRs (workspace-wide or repo-specific)
 - `get_pr_diff(workspace, repo_slug, pr_id)` - Get PR diff with stats
-- `get_authenticated_user()` - Auto-detect current user
+- `get_single_pr(workspace, repo_slug, pr_id)` - Fetch a single PR by ID
+- `get_current_user()` - Auto-detect current user
+- `fetch_prs_and_diffs(...)` - Fetch PRs and diffs together (parallel)
 
 **Smart Response Filtering:**
 - Only fetches PRs where user has NOT responded (no Approve/Decline)
@@ -213,6 +209,7 @@ GET /user
 **Key Features:**
 - Loads prompts from `~/.pr-review-cli/prompts/`
 - Auto-creates default prompt if missing
+- Auto-copies built-in prompts from project folder on first run
 - Supports frontmatter metadata
 - Validates prompt placeholders
 
@@ -232,7 +229,41 @@ Prompt content here...
 - `list_prompts()` - List all available prompts
 - `_create_default_prompt()` - Auto-create default prompt
 
-### 5. Config (`config.py`)
+### 5. LocalGitDiffManager (`git_diff_manager.py`)
+
+**Purpose:** Manages local git repository caching and diff generation
+
+**Key Features:**
+- Clones and caches Bitbucket repositories locally
+- Generates diffs using git (bypasses API rate limits)
+- Handles both SSH and HTTPS authentication
+- Automatic cleanup of stale repositories
+- Metadata tracking for cache management
+
+**Key Methods:**
+- `get_pr_diff_local(workspace, repo_slug, pr_id, source_branch, destination_branch)` - Generate diff from local repo
+- `cleanup_stale_repos()` - Remove old or oversized cached repos
+- `_ensure_repo_cloned(workspace, repo_slug)` - Ensure repo is cloned and up-to-date
+
+**Cache Location:** `~/.pr-review-cli/cache/git_repos/workspace/`
+
+### 6. GitOperations (`utils/git_operations.py`)
+
+**Purpose:** Async subprocess wrapper for git commands
+
+**Key Features:**
+- Async git command execution with timeout handling
+- Shallow clone support with fallback to full clone
+- Multiple diff syntax fallbacks for complex histories
+- Bare repository management
+
+**Key Methods:**
+- `clone_repo(remote_url, target_path, shallow=True)` - Clone repository
+- `fetch_branches(repo_path)` - Fetch all branches in bare repo
+- `get_diff(repo_path, source_branch, destination_branch)` - Generate unified diff
+- `verify_git_available()` - Check if git is installed
+
+### 7. Config (`config.py`)
 
 **Purpose:** Configuration management with environment variable validation
 
@@ -252,6 +283,10 @@ Prompt content here...
 - `CLAUDE_CLI_FLAGS` - Flags for JSON output (default: "-p --output-format json")
 - `BITBUCKET_BASE_URL` - API base URL
 - `CACHE_DIR` - Cache directory path
+- `PR_REVIEWER_GIT_USE_SSH` - Use SSH for git operations (default: "true")
+- `PR_REVIEWER_GIT_CACHE_MAX_AGE` - Git cache max age in days before cleanup (default: "30")
+- `PR_REVIEWER_GIT_CACHE_MAX_SIZE` - Git cache max size in GB before cleanup (default: "5.0")
+- `PR_REVIEWER_GIT_TIMEOUT` - Git command timeout in seconds (default: "300")
 
 **Note:** This app assumes you're using Claude Code CLI (https://claude.ai/code). The flags `-p --output-format json` are automatically added to the command.
 
@@ -259,16 +294,18 @@ Prompt content here...
 - `has_valid_credentials` - Check if valid credentials exist
 - `_print_credentials_warning()` - Print helpful setup message
 
-### 6. Models (`models.py`)
+### 8. Models (`models.py`)
 
 **Pydantic Models:**
 - `BitbucketPR` - Raw PR data from Bitbucket API
 - `PRDiff` - PR diff with statistics
 - `PRAnalysis` - AI analysis results
+  - `_skipped_reason` - Optional: Reason for skipping analysis ("diff_too_large", "timeout", "user_requested")
+  - `_diff_size` - Optional: Character count of diff (for logging/tracking)
 - `PRWithPriority` - PR with priority score and risk level
 - `UserInfo` - User information from Bitbucket
 
-### 7. InteractiveTUI (`presenters/interactive_tui.py`)
+### 9. InteractiveTUI (`presenters/interactive_tui.py`)
 
 **Purpose:** Textual-based interactive terminal UI
 
@@ -285,7 +322,7 @@ Prompt content here...
 - `o`: Open PR in browser
 - `q`: Quit
 
-### 8. ReportGenerator (`presenters/report_generator.py`)
+### 10. ReportGenerator (`presenters/report_generator.py`)
 
 **Purpose:** Generate static reports in multiple formats
 
@@ -300,7 +337,7 @@ Prompt content here...
 - Priority score display
 - Statistical summary
 
-### 9. Main CLI (`main.py`)
+### 11. Main CLI (`main.py`)
 
 **Purpose:** Entry point and CLI orchestration
 
@@ -310,11 +347,16 @@ Prompt content here...
 - `cache-stats` - Show author history statistics
 
 **CLI Options:**
-- `--no-interactive` - Disable TUI, use static report
-- `--export {terminal,markdown,json}` - Export format
-- `--output FILE` - Output filename (for markdown/json)
-- `--prompt NAME` - Use custom prompt
-- `-m, --max-count N` - Limit number of PRs
+- `--pr-url URL` - Analyze a single PR from its Bitbucket URL (auto non-interactive)
+- `--skip-analyze` - Skip AI analysis and show PR summary only (faster, no API costs)
+- `--interactive/--no-interactive, -i/-I` - Enable/disable TUI mode (default: enabled)
+- `--export {terminal,markdown,json}, -e` - Export format
+- `--output FILE, -o` - Output filename (for markdown/json)
+- `--prompt NAME, -p` - Use custom prompt
+- `--max-prs N, -m` - Limit number of PRs (default: 30)
+- `--local-diff/--api-diff` - Use local git cloning vs API for diffs
+- `--cleanup-git-cache` - Clean stale cached repositories before running (requires --local-diff)
+- `--use-https` - Use HTTPS instead of SSH for git operations (requires --local-diff)
 
 **Workflow:**
 1. Validate configuration
@@ -350,8 +392,6 @@ This tool uses Bitbucket API Tokens for authentication.
 - API Tokens are officially recommended by Bitbucket for script/API access
 
 ## Workspace-Wide Search Feature
-
- Work
 
 **Feature:** Search ALL repos in workspace for PRs assigned to you
 
@@ -476,20 +516,64 @@ poetry run flake8 pr_review/
 
 ### Debugging
 
-```bash
-# Enable debug logging
-export PR_REVIEW_DEBUG=1
+**IMPORTANT - Always use these flags for fast development iteration:**
+- `--skip-analyze` - Skip AI analysis (default for ALL debugging)
+- `--no-interactive` / `-I` - Use terminal output instead of TUI
 
-# Run with verbose output
-poetry run pr-review review workspace repo --verbose
+**Why these flags?**
+- AI analysis is slow and costs API credits - skip unless debugging the analyzer
+- TUI prevents seeing terminal output and makes it harder to spot errors
+- Non-interactive mode shows structured output that's easy to verify
+
+```bash
+# QUICK DEBUGGING (Recommended for 95% of development)
+# Skip AI, use terminal output - fastest iteration
+poetry run pr-review review workspace repo --skip-analyze -I
+
+# Or use the helper script if available
+./run.sh review --skip-analyze -I
+
+# DEBUGGING AI ANALYZER ONLY (use only when testing Claude integration)
+# Remove --skip-analyze to test AI analysis
+poetry run pr-review review workspace repo -I
+
+# DEBUGGING WITH LOGS
+# Enable debug logging for verbose output
+export PR_REVIEW_DEBUG=1
+poetry run pr-review review workspace repo --skip-analyze -I
+
+# DEBUGGING SPECIFIC MODULES
+# Test single PR from URL (no workspace/repo args needed)
+poetry run pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --skip-analyze -I
+
+# Test local diff mode (git cloning)
+poetry run pr-review review workspace repo --local-diff --skip-analyze -I
+
+# Limit PRs for faster testing
+poetry run pr-review review workspace repo -m 5 --skip-analyze -I
+
+# DEBUGGING CLI OUTPUT
+# Test export formats
+poetry run pr-review review workspace repo --skip-analyze -I --export markdown
+poetry run pr-review review workspace repo --skip-analyze -I --export json
 ```
+
+**Debugging Checklist:**
+1. **Most changes**: Use `--skip-analyze -I` - validates API calls, scoring, presenters
+2. **Analyzer changes only**: Remove `--skip-analyze`, keep `-I`
+3. **TUI changes only**: Remove `-I`, keep `--skip-analyze`
+4. **Full integration**: Remove both flags (slowest, use sparingly)
 
 ## Testing
 
 ### Quick Workflow Testing
 **Before asking the user to verify changes, always run:**
 ```bash
+# Fastest iteration (recommended for 95% of changes)
 ./run.sh review --skip-analyze -I
+
+# Or using poetry directly
+poetry run pr-review review workspace repo --skip-analyze -I
 ```
 
 This command:
@@ -497,6 +581,22 @@ This command:
 - ✅ Uses non-interactive mode (easy to verify)
 - ✅ Shows actual output (can verify functionality)
 - ✅ Tests real API calls (validates integration)
+- ✅ Tests scoring, filtering, and report generation
+
+**When to use AI analysis in testing:**
+```bash
+# Only when debugging ClaudeAnalyzer changes specifically
+poetry run pr-review review workspace repo -I
+
+# For single PR AI testing
+poetry run pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 -I
+```
+
+**When to use TUI in testing:**
+```bash
+# Only when debugging InteractiveTUI changes specifically
+poetry run pr-review review workspace repo --skip-analyze
+```
 
 ### Unit Tests
 Current test coverage:

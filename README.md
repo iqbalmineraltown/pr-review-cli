@@ -42,7 +42,7 @@ poetry install
 
 ### Step 1: Create Bitbucket API Token
 
-1. Go to: https://bitbucket.org/account/settings/app-passwords/
+1. Go to: https://bitbucket.org/account/settings/api-tokens/
 2. Click "Create API Token"
 3. Give it a name (e.g., "pr-review-cli")
 4. Select these permissions:
@@ -115,6 +115,19 @@ BITBUCKET_BASE_URL=https://api.bitbucket.org/2.0
 
 # Cache directory (default: ~/.pr-review-cli/cache)
 CACHE_DIR=/custom/cache/directory
+
+# Git Operations (for --local-diff mode)
+# Use SSH for git operations (default: true)
+PR_REVIEWER_GIT_USE_SSH=true
+
+# Git cache maximum age in days before cleanup (default: 30)
+PR_REVIEWER_GIT_CACHE_MAX_AGE=30
+
+# Git cache maximum size in GB before cleanup (default: 5.0)
+PR_REVIEWER_GIT_CACHE_MAX_SIZE=5.0
+
+# Git command timeout in seconds (default: 300)
+PR_REVIEWER_GIT_TIMEOUT=300
 ```
 
 ### AI CLI Configuration
@@ -188,6 +201,36 @@ Expected output (error - means model is wrong):
 
 ## Usage
 
+### Single PR Analysis
+
+Analyze a specific PR using its Bitbucket URL:
+
+```bash
+# Analyze a single PR from URL (automatically non-interactive)
+pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123
+
+# Combine with local diff mode for large PRs
+pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --local-diff
+
+# Use custom prompt for single PR
+pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --prompt security-focused
+```
+
+### Skip AI Analysis
+
+Quickly view PR summary without AI analysis (faster, no API costs):
+
+```bash
+# Skip AI analysis for all PRs
+pr-review review myworkspace --skip-analyze
+
+# Skip AI and export to markdown
+pr-review review myworkspace --skip-analyze --no-interactive --export markdown
+
+# Useful for quick PR overview before detailed review
+pr-review review myworkspace myrepo --skip-analyze -m 20
+```
+
 ### Interactive Review (Default)
 
 ```bash
@@ -202,19 +245,29 @@ pr-review review myworkspace myrepo
 
 ```bash
 # Generate markdown report
-pr-review review myworkspace --no-interactive --export markdown --output daily_report
+pr-review review myworkspace -I -e markdown -o daily_report
 
-# Generate JSON report
-pr-review review myworkspace --no-interactive --export json --output pr_data.json
+# Generate JSON report (short flags)
+pr-review review myworkspace -I -e json -o pr_data.json
 
 # Terminal output only
 pr-review review myworkspace --no-interactive --export terminal
+
+# Export format aliases
+pr-review review myworkspace -I -e markdown  # -e is short for --export
 ```
 
 ### Limit PRs
 
 ```bash
+# Limit to 10 PRs (default is 30)
 pr-review review myworkspace -m 10
+
+# Process up to 50 PRs
+pr-review review myworkspace --max-prs 50
+
+# Short flag works too
+pr-review review myworkspace -m 5
 ```
 
 ### Use Custom Prompt
@@ -399,6 +452,19 @@ pr-review review acme-corp --prompt security-focused -m 50
 pr-review review acme-corp --prompt performance-review
 ```
 
+### Single PR Quick Review
+
+```bash
+# Analyze a specific PR without AI (fastest)
+pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --skip-analyze
+
+# Deep dive on a single PR
+pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --prompt security-focused
+
+# Large PR analysis with local git
+pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --local-diff
+```
+
 ## Troubleshooting
 
 ### Permission denied or "credentials lack required scopes"?
@@ -411,7 +477,7 @@ Required: ["repository:read"]
 
 This means your API Token is missing required permissions:
 
-1. Go to: https://bitbucket.org/account/settings/app-passwords/
+1. Go to: https://bitbucket.org/account/settings/api-tokens/
 2. Create a new API Token with these permissions:
    - ✅ Pull requests: Read
    - ✅ Repositories: Read
@@ -553,7 +619,12 @@ API Tokens are:
 ~/.pr-review-cli/              # Config directory (auto-created)
 ├── .env                       # Your credentials ⚠️ NEVER commit
 ├── cache/                     # Cached data
+│   ├── git_repos/            # Cloned repos for --local-diff mode
+│   │   └── workspace/        # Bare git repositories
+│   └── author_history.json   # Author PR tracking
 └── prompts/                   # Custom analysis prompts
+    ├── default.md            # Auto-created
+    └── *.md                  # Your custom prompts
 
 ~/projects/pr-review-cli/      # Project directory (if installed from source)
 ├── .env.example               # Example template
