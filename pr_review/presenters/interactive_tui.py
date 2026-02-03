@@ -2,11 +2,36 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, Static
 from textual.containers import Horizontal, Vertical
 from rich.text import Text
+from rich.console import Console
+from rich.panel import Panel
 import webbrowser
+import asyncio
+import sys
+import time
+import signal
 from typing import List, Optional
 
 from ..models import PRWithPriority
 from ..priority_scorer import PriorityScorer
+from ..config import Config
+from ..bitbucket_client import BitbucketClient
+
+
+# Maximum comment size for Bitbucket API (with safety margin)
+MAX_COMMENT_SIZE = 30000
+
+# Timeout for user input before auto-resuming
+INPUT_TIMEOUT_SECONDS = 60
+
+
+class TimeoutError(Exception):
+    """Exception raised when input times out"""
+    pass
+
+
+def _timeout_handler(signum, frame):
+    """Signal handler for input timeout"""
+    raise TimeoutError()
 
 
 class PRDataTable(DataTable):
@@ -77,12 +102,14 @@ class PRReviewApp(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("o", "open_in_browser", "Open in Browser"),
+        ("p", "post_comment", "Post Comment"),
     ]
 
     def __init__(self, prs_with_priority: List[PRWithPriority]):
         super().__init__()
         self.prs_with_priority = prs_with_priority
         self.selected_pr: Optional[PRWithPriority] = None
+        self._relaunch_requested = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -193,8 +220,189 @@ class PRReviewApp(App):
         if self.selected_pr:
             webbrowser.open(self.selected_pr.pr.link)
 
+    def _format_analysis_as_markdown(self, item: PRWithPriority) -> str:
+        """Format PR analysis as markdown for posting as comment"""
+        pr = item.pr
+        analysis = item.analysis
+
+        # Validate we have meaningful content to post
+        has_content = (
+            analysis._skipped_reason or
+            analysis.good_points or
+            analysis.attention_required or
+            analysis.risk_factors
+        )
+
+        lines = []
+        lines.append(f"## 🤖 AI PR Review: {pr.title}\n\n")
+        lines.append(f"**Priority Score:** {item.priority_score}/100\n")
+        lines.append(f"**Quality Score:** {analysis.overall_quality_score}/100\n")
+        lines.append(f"**Est. Review Time:** {analysis.estimated_review_time}\n\n")
+
+        if not has_content:
+            # Return minimal comment for PRs without analysis data
+            lines.append("**Note:** No detailed analysis available for this PR.\n\n")
+            lines.append("---\n\n")
+            lines.append("*Posted by PR Review CLI*")
+            return "".join(lines)
+
+        if analysis._skipped_reason:
+            lines.append(f"### ⚠️ MANUAL REVIEW REQUIRED\n\n")
+            lines.append(f"- **Reason:** {analysis._skipped_reason}\n")
+            if analysis._diff_size:
+                lines.append(f"- **Diff Size:** {analysis._diff_size:,} characters\n")
+            lines.append("\n")
+        else:
+            if analysis.good_points:
+                lines.append("### ✅ Good Points\n\n")
+                for point in analysis.good_points:
+                    lines.append(f"- {point}\n")
+                lines.append("\n")
+
+            if analysis.attention_required:
+                lines.append("### ⚠️ Attention Required\n\n")
+                for attn in analysis.attention_required:
+                    lines.append(f"- {attn}\n")
+                lines.append("\n")
+
+            if analysis.risk_factors:
+                lines.append("### 🔍 Risk Factors\n\n")
+                for risk in analysis.risk_factors:
+                    lines.append(f"- {risk}\n")
+                lines.append("\n")
+
+        lines.append("---\n\n")
+        lines.append("*Posted by PR Review CLI*")
+
+        markdown = "".join(lines)
+
+        # Validate size against Bitbucket API limit
+        if len(markdown) > MAX_COMMENT_SIZE:
+            # Truncate with notice
+            markdown = markdown[:MAX_COMMENT_SIZE - 200] + "\n\n... (truncated due to Bitbucket size limit) ...\n\n---\n\n*Posted by PR Review CLI*"
+
+        return markdown
+
+    def _post_comment_terminal(self) -> bool:
+        """Post comment to PR using terminal UI. Returns True on success."""
+        if not self.selected_pr:
+            return False
+
+        pr = self.selected_pr.pr
+        console = Console()
+
+        try:
+            # Clear screen for clean terminal output
+            console.clear()
+
+            # Show header
+            title_display = pr.title[:47] + "..." if len(pr.title) > 50 else pr.title
+            console.print(Panel.fit(
+                f"[bold cyan]Posting Comment[/bold cyan]\n"
+                f"[dim]PR: #{pr.id} - {title_display}[/dim]",
+                border_style="cyan"
+            ))
+
+            # Format comment as markdown
+            markdown = self._format_analysis_as_markdown(self.selected_pr)
+
+            # Validate size before attempting to post
+            if len(markdown) > MAX_COMMENT_SIZE:
+                console.print(f"\n[yellow]⚠️  Comment too large for Bitbucket API[/yellow]")
+                console.print(f"[dim]Size: {len(markdown)} characters (limit: ~32,000)[/dim]")
+                console.print("\n[dim]The comment has been truncated to fit within the limit.[/dim]")
+
+            # Show preview
+            console.print("\n[bold]Comment Preview:[/bold]")
+            preview_text = markdown[:500] + "..." if len(markdown) > 500 else markdown
+            console.print(Panel(preview_text, border_style="dim"))
+
+            # Post comment
+            with console.status("[cyan]Posting comment to Bitbucket...[/cyan]"):
+                async def _post():
+                    config = Config()
+                    async with BitbucketClient(
+                        email=config.bitbucket_email,
+                        api_token=config.bitbucket_api_token,
+                        base_url=config.bitbucket_base_url
+                    ) as client:
+                        return await client.post_pr_comment(
+                            workspace=pr.workspace,
+                            repo_slug=pr.repo_slug,
+                            pr_id=pr.id,
+                            content=markdown
+                        )
+
+                result = asyncio.run(_post())
+
+            # Success
+            console.print("\n[green]✓[/green] [bold green]Comment posted successfully![/bold green]")
+            console.print(f"[dim]Comment ID: {result.get('id', 'N/A')}[/dim]")
+
+        except RuntimeError as e:
+            console.print(f"\n[red]❌ Error:[/red] {e}")
+        except Exception as e:
+            console.print(f"\n[red]❌ Unexpected Error:[/red] {e}")
+
+        # Wait for user to acknowledge (with timeout)
+        console.print(f"\n[dim]Press Enter to return to TUI... (auto-resume in {INPUT_TIMEOUT_SECONDS}s)[/dim]")
+
+        try:
+            # Set timeout for input
+            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(INPUT_TIMEOUT_SECONDS)
+            input()
+            signal.alarm(0)  # Cancel alarm
+            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+        except TimeoutError:
+            pass  # Auto-resume silently
+        except Exception:
+            # On any error, ensure alarm is cancelled
+            try:
+                signal.alarm(0)
+            except:
+                pass
+
+        return True
+
+    def action_post_comment(self) -> None:
+        """Post analysis as comment to selected PR"""
+        if not self.selected_pr:
+            return
+
+        # Store the PR to post comment for
+        self._pr_to_post = self.selected_pr
+
+        # Exit TUI first - this stops the Textual event loop
+        self.exit()
+
 
 def launch_interactive_tui(prs_with_priority: List[PRWithPriority]):
-    """Launch the interactive TUI application"""
-    app = PRReviewApp(prs_with_priority)
-    app.run()
+    """
+    Launch the interactive TUI application.
+
+    This function handles the complete TUI lifecycle including:
+    - Running the TUI
+    - Posting comments when 'p' is pressed
+    - Relaunching the TUI after posting
+    - Exiting when 'q' is pressed
+    """
+    while True:
+        app = PRReviewApp(prs_with_priority)
+        app.run()
+
+        # Check if user pressed 'p' to post a comment
+        if hasattr(app, '_pr_to_post') and app._pr_to_post:
+            # Store the PR to post
+            pr_to_post = app._pr_to_post
+
+            # Post the comment using terminal UI
+            # We need to temporarily create an app-like context for the method
+            temp_app = PRReviewApp(prs_with_priority)
+            temp_app.selected_pr = pr_to_post
+            temp_app._post_comment_terminal()
+
+            # Loop continues - relaunch TUI with same PR list
+        else:
+            # User pressed 'q' to quit
+            break

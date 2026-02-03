@@ -65,6 +65,15 @@ class BitbucketClient:
         response.raise_for_status()
         return response.text
 
+    async def _post(self, endpoint: str, data: dict) -> dict:
+        """Make a POST request to the Bitbucket API"""
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        response = await self._client.post(endpoint, json=data)
+        response.raise_for_status()
+        return response.json()
+
     async def get_current_user(self) -> UserInfo:
         """Get the currently authenticated user's info"""
         try:
@@ -454,6 +463,78 @@ class BitbucketClient:
             deletions=deletions,
             diff_content=diff_content
         )
+
+    async def post_pr_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: str,
+        content: str,
+        max_retries: int = 3
+    ) -> dict:
+        """
+        Post a markdown comment to a PR with retry logic.
+
+        Args:
+            workspace: Bitbucket workspace name
+            repo_slug: Repository slug/name
+            pr_id: Pull request ID
+            content: Markdown content for the comment
+            max_retries: Maximum number of retry attempts for transient errors
+
+        Returns:
+            Response data from Bitbucket API containing comment details
+
+        Raises:
+            RuntimeError: If posting fails after all retries
+        """
+        endpoint = f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
+        payload = {
+            "content": {
+                "raw": content
+            }
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return await self._post(endpoint, payload)
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                status = e.response.status_code
+
+                # Don't retry client errors (4xx)
+                if 400 <= status < 500:
+                    if status == 401:
+                        raise RuntimeError(
+                            "Authentication failed. Please check your API Token credentials.\n"
+                            "Verify PR_REVIEWER_BITBUCKET_EMAIL and PR_REVIEWER_BITBUCKET_API_TOKEN in ~/.pr-review-cli/.env"
+                        )
+                    elif status == 403:
+                        raise RuntimeError(
+                            f"Permission denied posting comment to {workspace}/{repo_slug}/#{pr_id}.\n"
+                            "Your API Token may not have write permissions."
+                        )
+                    elif status == 404:
+                        raise RuntimeError(
+                            f"PR not found: {workspace}/{repo_slug}/#{pr_id}\n"
+                            "It may have been deleted or you don't have access."
+                        )
+                    else:
+                        raise RuntimeError(f"Failed to post comment (HTTP {status}): {e}")
+
+                # Retry server errors (5xx) with exponential backoff
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+                last_error = e
+                # Retry network issues with exponential backoff
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+
+        # All retries exhausted
+        raise RuntimeError(f"Failed to post comment after {max_retries} attempts: {last_error}")
 
     async def fetch_prs_and_diffs(
         self,
