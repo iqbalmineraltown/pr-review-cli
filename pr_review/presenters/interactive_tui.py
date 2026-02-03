@@ -8,7 +8,6 @@ import webbrowser
 import asyncio
 import sys
 import time
-import signal
 from typing import List, Optional
 
 from ..models import PRWithPriority
@@ -20,18 +19,8 @@ from ..bitbucket_client import BitbucketClient
 # Maximum comment size for Bitbucket API (with safety margin)
 MAX_COMMENT_SIZE = 30000
 
-# Timeout for user input before auto-resuming
-INPUT_TIMEOUT_SECONDS = 60
-
-
-class TimeoutError(Exception):
-    """Exception raised when input times out"""
-    pass
-
-
-def _timeout_handler(signum, frame):
-    """Signal handler for input timeout"""
-    raise TimeoutError()
+# Auto-resume delay after posting comment (in seconds)
+AUTO_RESUME_SECONDS = 5
 
 
 class PRDataTable(DataTable):
@@ -344,24 +333,9 @@ class PRReviewApp(App):
         except Exception as e:
             console.print(f"\n[red]❌ Unexpected Error:[/red] {e}")
 
-        # Wait for user to acknowledge (with timeout)
-        console.print(f"\n[dim]Press Enter to return to TUI... (auto-resume in {INPUT_TIMEOUT_SECONDS}s)[/dim]")
-
-        try:
-            # Set timeout for input
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(INPUT_TIMEOUT_SECONDS)
-            input()
-            signal.alarm(0)  # Cancel alarm
-            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
-        except TimeoutError:
-            pass  # Auto-resume silently
-        except Exception:
-            # On any error, ensure alarm is cancelled
-            try:
-                signal.alarm(0)
-            except:
-                pass
+        # Auto-resume after a brief delay
+        console.print(f"\n[dim]Returning to TUI in {AUTO_RESUME_SECONDS} seconds...[/dim]")
+        time.sleep(AUTO_RESUME_SECONDS)
 
         return True
 
