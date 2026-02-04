@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
 
@@ -28,6 +28,15 @@ class PRDiff(BaseModel):
     diff_content: str
 
 
+class InlineComment(BaseModel):
+    """A specific line comment with file context for PR review"""
+    file_path: str
+    line_number: int  # Line number in NEW version (the "to" line)
+    severity: str  # "critical", "high", "medium", "low"
+    message: str
+    code_snippet: Optional[str] = None
+
+
 class PRAnalysis(BaseModel):
     """AI analysis results for a PR"""
     pr_id: str
@@ -38,6 +47,7 @@ class PRAnalysis(BaseModel):
     estimated_review_time: str  # "5-10 min"
     _skipped_reason: Optional[str] = None  # "diff_too_large", "timeout", etc.
     _diff_size: Optional[int] = None  # Character count of diff
+    line_comments: List[InlineComment] = []  # Per-line inline comments
 
 
 class PRWithPriority(BaseModel):

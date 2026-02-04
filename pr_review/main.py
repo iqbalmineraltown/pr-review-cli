@@ -31,6 +31,9 @@ def review(
     export: str = typer.Option(None, "--export", "-e", help="Export format: markdown/json"),
     output: str = typer.Option("pr_report", "--output", "-o", help="Output file path"),
     max_prs: int = typer.Option(30, "--max-prs", "-m", help="Max PRs to analyze"),
+    post: bool = typer.Option(False, "--post", help="Automatically post comments after analysis (non-interactive mode only)"),
+    max_inline_comments: int = typer.Option(20, "--max-inline-comments", help="Maximum inline comments per PR (default: 20)"),
+    inline_severity: str = typer.Option("critical,high", "--inline-severity", help="Minimum severity for inline: critical,high,medium,low"),
     local_diff: bool = typer.Option(
         False,
         "--local-diff/--api-diff",
@@ -55,6 +58,9 @@ def review(
 
     With --pr-url, analyze a single PR from its Bitbucket URL (automatically non-interactive).
     With --skip-analyze, skip AI analysis and show PR summary only (faster, no API costs).
+    With --post, automatically post comments after analysis (non-interactive mode only).
+    With --max-inline-comments, limit the number of inline comments per PR.
+    With --inline-severity, set minimum severity level for inline comments.
     With --local-diff, clone repositories and generate diffs locally (bypasses API rate limits).
     With --cleanup-git-cache, clean stale cached repositories before running (requires --local-diff).
     With --use-https, use HTTPS instead of SSH for git operations (requires --local-diff).
@@ -340,14 +346,79 @@ def review(
                     scorer = PriorityScorer(config.cache_dir)
                     prs_with_priority = scorer.score_prs(prs, analyses, diffs)
 
-                # 5. Present results
+                # 5. Auto-post comments if requested (non-interactive mode only)
+                if post and not interactive:
+                    # Parse inline severity filter
+                    severity_levels = ["critical", "high", "medium", "low"]
+                    requested_severities = [s.strip().lower() for s in inline_severity.split(",")]
+                    min_severity_index = min(
+                        [severity_levels.index(s) for s in requested_severities if s in severity_levels],
+                        default=1  # Default to "high"
+                    )
+                    allowed_severities = set(severity_levels[min_severity_index:])
+
+                    console.print("\n[cyan]📝 Posting Comments[/cyan]\n")
+
+                    for pr_with_priority in prs_with_priority:
+                        pr = pr_with_priority.pr
+                        analysis = pr_with_priority.analysis
+
+                        # Post summary comment
+                        from .presenters.report_generator import generate_markdown_for_pr
+                        summary = generate_markdown_for_pr(pr_with_priority)
+
+                        try:
+                            await client.post_pr_comment(
+                                workspace=pr.workspace,
+                                repo_slug=pr.repo_slug,
+                                pr_id=pr.id,
+                                content=summary
+                            )
+                            console.print(f"[green]✓[/green] Posted summary comment to PR [cyan]{pr.id}[/cyan]: [bold]{pr.title[:40]}...[/bold]")
+                        except RuntimeError as e:
+                            console.print(f"[red]✗[/red] Failed to post summary to PR {pr.id}: {str(e)[:60]}")
+                            continue  # Skip inline comments if summary fails
+
+                        # Post inline comments (filtered by severity and max count)
+                        inline_comments = [
+                            c for c in analysis.line_comments
+                            if c.severity in allowed_severities
+                        ][:max_inline_comments]
+
+                        if inline_comments:
+                            try:
+                                results = await client.post_inline_comments_batch(
+                                    workspace=pr.workspace,
+                                    repo_slug=pr.repo_slug,
+                                    pr_id=pr.id,
+                                    comments=inline_comments,
+                                    delay_between=0.5
+                                )
+
+                                successful = sum(1 for r in results if r.get("success"))
+                                failed = len(results) - successful
+
+                                if successful > 0:
+                                    console.print(f"  [green]✓[/green] Posted [cyan]{successful}[/cyan] inline comment(s)")
+                                if failed > 0:
+                                    console.print(f"  [yellow]⚠[/yellow] [cyan]{failed}[/cyan] inline comment(s) failed")
+
+                            except RuntimeError as e:
+                                console.print(f"  [yellow]⚠[/yellow] Inline comments failed: {str(e)[:60]}")
+                        else:
+                            console.print("  [dim]No inline comments to post[/dim]")
+
+                    console.print()
+
+                # 6. Present results
                 if interactive:
                     # For TUI, we need to exit the async context first
-                    return prs_with_priority
+                    # Pass client for comment posting functionality
+                    return prs_with_priority, client
                 else:
                     generate_terminal_report(prs_with_priority)
 
-                # 6. Export if requested
+                # 7. Export if requested
                 if export:
                     if export == "markdown":
                         output_path = f"{output}.md"
@@ -367,8 +438,13 @@ def review(
         result = asyncio.run(_review())
 
         # If TUI mode, launch it outside the asyncio context
-        if result and isinstance(result, list) and interactive:
-            launch_interactive_tui(result)
+        if result and interactive:
+            # Handle both tuple (with client) and list (legacy) return types
+            if isinstance(result, tuple):
+                prs_with_priority, client = result
+                launch_interactive_tui(prs_with_priority, client)
+            else:
+                launch_interactive_tui(result)
 
     except RuntimeError as e:
         console.print(f"\n[red]{str(e)}[/red]\n")

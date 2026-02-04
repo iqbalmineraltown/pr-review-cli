@@ -6,7 +6,7 @@ from typing import List
 import asyncio
 from pathlib import Path
 
-from .models import BitbucketPR, PRAnalysis
+from .models import BitbucketPR, PRAnalysis, InlineComment
 from .config import Config
 
 
@@ -88,10 +88,10 @@ Do not include any other text outside the JSON.'''
 
         # Truncate diff if it's moderately large but still analyzable
         diff_to_analyze = diff
-        if len(diff) > 30000:
-            # Take first and last parts
-            mid = len(diff) // 2
-            diff_to_analyze = diff[:15000] + "\n\n[... diff truncated ...]\n\n" + diff[-15000:]
+        if len(diff) > 20000:
+            # For large diffs, take first part only to focus on main changes
+            # This helps AI provide more specific inline comments
+            diff_to_analyze = diff[:25000] + "\n\n[... diff truncated to focus on main changes ...]\n\n"
 
         prompt = self.prompt_template.format(
             title=pr.title,
@@ -126,6 +126,16 @@ Do not include any other text outside the JSON.'''
             # Handle GLM format which wraps response in {"type": "result", "result": "..."}
             analysis_data = self._extract_analysis_data(parsed_json)
 
+            # Extract line_comments if present
+            line_comments_raw = analysis_data.get("line_comments", [])
+            line_comments = []
+            for lc in line_comments_raw:
+                try:
+                    line_comments.append(InlineComment(**lc))
+                except Exception:
+                    # Skip invalid inline comments
+                    pass
+
             return PRAnalysis(
                 pr_id=pr.id,
                 good_points=analysis_data.get("good_points", []),
@@ -133,7 +143,8 @@ Do not include any other text outside the JSON.'''
                 risk_factors=analysis_data.get("risk_factors", []),
                 overall_quality_score=analysis_data.get("overall_quality_score", 50),
                 estimated_review_time=analysis_data.get("estimated_review_time", "15min"),
-                _diff_size=len(diff)
+                _diff_size=len(diff),
+                line_comments=line_comments
             )
 
         except asyncio.TimeoutError:
@@ -180,6 +191,9 @@ Do not include any other text outside the JSON.'''
         cmd = cmd.replace("{prompt_file}", prompt_file)
         cmd = cmd.replace("{prompt}", prompt)
 
+        # Use longer timeout for large prompts (more than 10k chars)
+        timeout = 300 if len(prompt) > 10000 else 120
+
         try:
             result = await loop.run_in_executor(
                 None,
@@ -188,7 +202,7 @@ Do not include any other text outside the JSON.'''
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    timeout=timeout,
                     input=prompt,
                     check=False
                 )
@@ -222,14 +236,28 @@ Do not include any other text outside the JSON.'''
             # GLM format - extract from "result" field
             result_content = parsed_json.get("result", "")
 
-            # Strip markdown code blocks (```json...```)
-            if result_content.startswith("```json"):
-                result_content = result_content[7:]  # Remove ```json
-            elif result_content.startswith("```"):
-                result_content = result_content[3:]  # Remove ```
+            # Find JSON within markdown code blocks
+            # GLM may include conversational text before/after the code block
+            import re
 
-            if result_content.endswith("```"):
-                result_content = result_content[:-3]  # Remove trailing ```
+            # Try to find ```json...``` code block
+            json_block = re.search(r'```json\s*\n(.*?)\n```', result_content, re.DOTALL)
+            if json_block:
+                result_content = json_block.group(1)
+            else:
+                # Try to find ```...``` code block (without json label)
+                json_block = re.search(r'```\s*\n(.*?)\n```', result_content, re.DOTALL)
+                if json_block:
+                    result_content = json_block.group(1)
+                else:
+                    # No code block found - try stripping from edges as fallback
+                    if result_content.startswith("```json"):
+                        result_content = result_content[7:]  # Remove ```json
+                    elif result_content.startswith("```"):
+                        result_content = result_content[3:]  # Remove ```
+
+                    if result_content.endswith("```"):
+                        result_content = result_content[:-3]  # Remove trailing ```
 
             result_content = result_content.strip()
 
@@ -243,7 +271,8 @@ Do not include any other text outside the JSON.'''
                     "attention_required": [f"Failed to parse GLM response: {str(e)[:100]}"],
                     "risk_factors": ["GLM parsing error"],
                     "overall_quality_score": 50,
-                    "estimated_review_time": "30min"
+                    "estimated_review_time": "30min",
+                    "line_comments": []
                 }
 
         # Standard Claude CLI format - return as-is

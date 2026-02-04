@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 import time
-from .models import BitbucketPR, PRDiff, UserInfo
+from .models import BitbucketPR, PRDiff, UserInfo, InlineComment
 from .config import Config
 
 
@@ -535,6 +535,153 @@ class BitbucketClient:
 
         # All retries exhausted
         raise RuntimeError(f"Failed to post comment after {max_retries} attempts: {last_error}")
+
+    async def post_inline_comment(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: str,
+        content: str,
+        file_path: str,
+        line_number: int,
+        max_retries: int = 3
+    ) -> dict:
+        """
+        Post an inline comment to a specific line in a PR.
+
+        Args:
+            workspace: Bitbucket workspace name
+            repo_slug: Repository slug/name
+            pr_id: Pull request ID
+            content: Comment content (markdown)
+            file_path: Path to the file in the repo
+            line_number: Line number in the NEW version (the "to" line)
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            Response data from Bitbucket API containing comment details
+
+        Raises:
+            RuntimeError: If posting fails after all retries
+        """
+        endpoint = f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
+        payload = {
+            "content": {
+                "raw": content
+            },
+            "inline": {
+                "to": line_number,
+                "path": file_path
+            }
+        }
+
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return await self._post(endpoint, payload)
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                status = e.response.status_code
+
+                # Don't retry client errors (4xx)
+                if 400 <= status < 500:
+                    if status == 401:
+                        raise RuntimeError(
+                            "Authentication failed. Please check your API Token credentials.\n"
+                            "Verify PR_REVIEWER_BITBUCKET_EMAIL and PR_REVIEWER_BITBUCKET_API_TOKEN in ~/.pr-review-cli/.env"
+                        )
+                    elif status == 403:
+                        raise RuntimeError(
+                            f"Permission denied posting inline comment to {workspace}/{repo_slug}/#{pr_id}.\n"
+                            "Your API Token may not have write permissions."
+                        )
+                    elif status == 404:
+                        raise RuntimeError(
+                            f"PR not found: {workspace}/{repo_slug}/#{pr_id}\n"
+                            "It may have been deleted or you don't have access."
+                        )
+                    elif status == 400:
+                        # Likely invalid line number or file path
+                        raise RuntimeError(
+                            f"Invalid inline comment parameters for {workspace}/{repo_slug}/#{pr_id}.\n"
+                            f"File: {file_path}, Line: {line_number}\n"
+                            f"The line may not exist in the diff."
+                        )
+                    else:
+                        raise RuntimeError(f"Failed to post inline comment (HTTP {status}): {e}")
+
+                # Retry server errors (5xx) with exponential backoff
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as e:
+                last_error = e
+                # Retry network issues with exponential backoff
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+
+        # All retries exhausted
+        raise RuntimeError(f"Failed to post inline comment after {max_retries} attempts: {last_error}")
+
+    async def post_inline_comments_batch(
+        self,
+        workspace: str,
+        repo_slug: str,
+        pr_id: str,
+        comments: list[InlineComment],
+        delay_between: float = 0.5,
+        max_comments: int = 50
+    ) -> list[dict]:
+        """
+        Post multiple inline comments with rate limiting.
+
+        Args:
+            workspace: Bitbucket workspace name
+            repo_slug: Repository slug/name
+            pr_id: Pull request ID
+            comments: List of InlineComment objects to post
+            delay_between: Delay in seconds between comments (default: 0.5)
+            max_comments: Maximum number of comments to post (default: 50)
+
+        Returns:
+            List of response data from Bitbucket API for each posted comment
+
+        Raises:
+            RuntimeError: If posting fails critically
+        """
+        # Enforce max comments limit
+        comments_to_post = comments[:max_comments]
+        results = []
+
+        for comment in comments_to_post:
+            try:
+                result = await self.post_inline_comment(
+                    workspace=workspace,
+                    repo_slug=repo_slug,
+                    pr_id=pr_id,
+                    content=comment.message,
+                    file_path=comment.file_path,
+                    line_number=comment.line_number
+                )
+                results.append({
+                    "success": True,
+                    "comment": comment,
+                    "response": result
+                })
+
+                # Rate limiting delay
+                if delay_between > 0:
+                    await asyncio.sleep(delay_between)
+
+            except RuntimeError as e:
+                # Log error but continue with other comments
+                results.append({
+                    "success": False,
+                    "comment": comment,
+                    "error": str(e)
+                })
+
+        return results
 
     async def fetch_prs_and_diffs(
         self,

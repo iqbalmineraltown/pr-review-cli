@@ -91,14 +91,15 @@ class PRReviewApp(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("o", "open_in_browser", "Open in Browser"),
-        ("p", "post_comment", "Post Comment"),
+        ("p", "post_comments", "Post Comments"),
     ]
 
-    def __init__(self, prs_with_priority: List[PRWithPriority]):
+    def __init__(self, prs_with_priority: List[PRWithPriority], bitbucket_client: Optional[BitbucketClient] = None):
         super().__init__()
         self.prs_with_priority = prs_with_priority
         self.selected_pr: Optional[PRWithPriority] = None
         self._relaunch_requested = False
+        self._bitbucket_client = bitbucket_client
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -202,6 +203,23 @@ class PRReviewApp(App):
                 text.append(f"  • {risk}\n")
             text.append("\n")
 
+        # Show inline comments preview
+        if analysis.line_comments:
+            text.append("📍 Inline Comments\n", style="bold cyan")
+            for comment in analysis.line_comments[:10]:  # Show first 10
+                severity_style = {
+                    "critical": "bold red",
+                    "high": "red",
+                    "medium": "yellow",
+                    "low": "green"
+                }.get(comment.severity, "")
+                text.append(f"  [{comment.severity.upper()}] ", style=severity_style)
+                text.append(f"{comment.file_path}:{comment.line_number}\n")
+                text.append(f"    {comment.message}\n")
+            if len(analysis.line_comments) > 10:
+                text.append(f"  ... and {len(analysis.line_comments) - 10} more\n")
+            text.append("\n")
+
         detail_content.update(text)
 
     def action_open_in_browser(self) -> None:
@@ -273,11 +291,12 @@ class PRReviewApp(App):
         return markdown
 
     def _post_comment_terminal(self) -> bool:
-        """Post comment to PR using terminal UI. Returns True on success."""
+        """Post both summary and inline comments to PR using terminal UI. Returns True on success."""
         if not self.selected_pr:
             return False
 
         pr = self.selected_pr.pr
+        analysis = self.selected_pr.analysis
         console = Console()
 
         try:
@@ -287,12 +306,12 @@ class PRReviewApp(App):
             # Show header
             title_display = pr.title[:47] + "..." if len(pr.title) > 50 else pr.title
             console.print(Panel.fit(
-                f"[bold cyan]Posting Comment[/bold cyan]\n"
+                f"[bold cyan]Posting Comments[/bold cyan]\n"
                 f"[dim]PR: #{pr.id} - {title_display}[/dim]",
                 border_style="cyan"
             ))
 
-            # Format comment as markdown
+            # Format summary comment as markdown
             markdown = self._format_analysis_as_markdown(self.selected_pr)
 
             # Validate size before attempting to post
@@ -301,14 +320,14 @@ class PRReviewApp(App):
                 console.print(f"[dim]Size: {len(markdown)} characters (limit: ~32,000)[/dim]")
                 console.print("\n[dim]The comment has been truncated to fit within the limit.[/dim]")
 
-            # Show preview
-            console.print("\n[bold]Comment Preview:[/bold]")
+            # Show preview of summary comment
+            console.print("\n[bold]Summary Comment:[/bold]")
             preview_text = markdown[:500] + "..." if len(markdown) > 500 else markdown
             console.print(Panel(preview_text, border_style="dim"))
 
-            # Post comment
-            with console.status("[cyan]Posting comment to Bitbucket...[/cyan]"):
-                async def _post():
+            # Post summary comment
+            with console.status("[cyan]Posting summary comment to Bitbucket...[/cyan]"):
+                async def _post_summary():
                     config = Config()
                     async with BitbucketClient(
                         email=config.bitbucket_email,
@@ -322,11 +341,42 @@ class PRReviewApp(App):
                             content=markdown
                         )
 
-                result = asyncio.run(_post())
+                result = asyncio.run(_post_summary())
 
             # Success
-            console.print("\n[green]✓[/green] [bold green]Comment posted successfully![/bold green]")
+            console.print("\n[green]✓[/green] [bold green]Summary comment posted successfully![/bold green]")
             console.print(f"[dim]Comment ID: {result.get('id', 'N/A')}[/dim]")
+
+            # Post inline comments if available
+            if analysis.line_comments:
+                console.print(f"\n[cyan]Posting {len(analysis.line_comments)} inline comment(s)...[/cyan]")
+
+                async def _post_inline():
+                    config = Config()
+                    async with BitbucketClient(
+                        email=config.bitbucket_email,
+                        api_token=config.bitbucket_api_token,
+                        base_url=config.bitbucket_base_url
+                    ) as client:
+                        return await client.post_inline_comments_batch(
+                            workspace=pr.workspace,
+                            repo_slug=pr.repo_slug,
+                            pr_id=pr.id,
+                            comments=analysis.line_comments,
+                            delay_between=0.5
+                        )
+
+                inline_results = asyncio.run(_post_inline())
+
+                successful = sum(1 for r in inline_results if r.get("success"))
+                failed = len(inline_results) - successful
+
+                if successful > 0:
+                    console.print(f"[green]✓[/green] Posted [cyan]{successful}[/cyan] inline comment(s)")
+                if failed > 0:
+                    console.print(f"[yellow]⚠[/yellow] [cyan]{failed}[/cyan] inline comment(s) failed")
+            else:
+                console.print("\n[dim]No inline comments to post[/dim]")
 
         except RuntimeError as e:
             console.print(f"\n[red]❌ Error:[/red] {e}")
@@ -339,19 +389,19 @@ class PRReviewApp(App):
 
         return True
 
-    def action_post_comment(self) -> None:
-        """Post analysis as comment to selected PR"""
+    def action_post_comments(self) -> None:
+        """Post both summary and inline comments to selected PR"""
         if not self.selected_pr:
             return
 
-        # Store the PR to post comment for
+        # Store the PR to post comments for
         self._pr_to_post = self.selected_pr
 
         # Exit TUI first - this stops the Textual event loop
         self.exit()
 
 
-def launch_interactive_tui(prs_with_priority: List[PRWithPriority]):
+def launch_interactive_tui(prs_with_priority: List[PRWithPriority], bitbucket_client: Optional[BitbucketClient] = None):
     """
     Launch the interactive TUI application.
 
@@ -360,19 +410,23 @@ def launch_interactive_tui(prs_with_priority: List[PRWithPriority]):
     - Posting comments when 'p' is pressed
     - Relaunching the TUI after posting
     - Exiting when 'q' is pressed
+
+    Args:
+        prs_with_priority: List of PRs with priority scores
+        bitbucket_client: Optional BitbucketClient for posting comments
     """
     while True:
-        app = PRReviewApp(prs_with_priority)
+        app = PRReviewApp(prs_with_priority, bitbucket_client)
         app.run()
 
-        # Check if user pressed 'p' to post a comment
+        # Check if user pressed 'p' to post comments
         if hasattr(app, '_pr_to_post') and app._pr_to_post:
             # Store the PR to post
             pr_to_post = app._pr_to_post
 
-            # Post the comment using terminal UI
+            # Post the comments using terminal UI
             # We need to temporarily create an app-like context for the method
-            temp_app = PRReviewApp(prs_with_priority)
+            temp_app = PRReviewApp(prs_with_priority, bitbucket_client)
             temp_app.selected_pr = pr_to_post
             temp_app._post_comment_terminal()
 

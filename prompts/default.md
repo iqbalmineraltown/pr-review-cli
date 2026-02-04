@@ -1,105 +1,41 @@
 ---
-name: "Standard PR Review"
-description: "Comprehensive pull request code review"
-version: "3.0"
+name: "Inline Comments Focused"
+description: "Focused on generating inline comments for specific code lines"
+version: "1.0"
 ---
 
-# Pull Request Code Review
+# Code Review with Inline Comments
 
-Review the following pull request thoroughly and provide actionable feedback.
+Analyze this pull request and provide feedback.
 
-## PR Context
-- **Title**: {title}
-- **Author**: {author}
-- **Branch**: {source} → {destination}
+## PR
+- Title: {{{title}}}
+- Author: {{{author}}}
+- Branch: {{{source}}} → {{{destination}}}
 
-## Code Changes
-```
-{diff}
-```
+## Diff
+{{{diff}}}
 
-## Review Guidelines
+## Your Task
 
-Analyze the code changes and provide feedback on:
+Identify ALL specific code issues that need attention and create inline comments for each one. Do not limit yourself - provide inline comments for EVERY line that has a significant issue (security vulnerabilities, bugs, code quality issues, missing error handling, etc.).
 
-**Logic & Correctness**
-- Algorithm correctness and business logic
-- Edge cases and boundary conditions
-- Race conditions and concurrency issues
-- Data flow and state management
+For each issue, provide:
+1. **file_path**: The file name (from diff header like +++ b/src/file.py)
+2. **line_number**: The line number in the NEW version (lines starting with +)
+3. **severity**: "critical", "high", "medium", or "low"
+4. **message**: Brief description of the issue
 
-**Code Quality**
-- Code organization and structure
-- Naming conventions
-- SOLID principles and design patterns
-- Code duplication
-- Performance optimizations
+## Example Response
 
-**Security** (if applicable)
-- SQL injection, XSS, CSRF vulnerabilities
-- Hardcoded credentials or API keys
-- Insecure data handling
-- Authentication/authorization flaws
-- Input validation
+The response must be valid JSON only, with these fields:
+- good_points: array of strings
+- attention_required: array of strings
+- risk_factors: array of strings
+- overall_quality_score: number 0-100
+- estimated_review_time: string
+- line_comments: array of objects (REQUIRED - provide as many as needed)
 
-**Testing** (if tests modified)
-- Test coverage completeness
-- Test quality and assertions
-- Edge case testing
-- Mock/stub appropriateness
+Each line_comment needs: file_path, line_number, severity, message
 
-**Documentation** (if docs modified)
-- Documentation clarity and completeness
-- Comment accuracy
-- API documentation quality
-
-## Severity Labels
-
-- **[CRITICAL]**: Security vulnerabilities, data loss risks, major logic errors
-- **[HIGH]**: Bugs that will cause failures, significant performance issues
-- **[MEDIUM]**: Code quality issues, minor bugs, missing error handling
-- **[LOW]**: Stylistic issues, suggestions for improvement
-
-## Quality Score Calculation
-
-Calculate a score from 0-100:
-- Start from 100
-- Subtract 5-10 points per critical issue
-- Subtract 3-5 points per high-severity issue
-- Subtract 1-2 points per medium issue
-- Add bonus points for exceptional quality
-
-Score ranges:
-- 90-100: Excellent, minimal review needed
-- 70-89: Good, standard review
-- 50-69: Acceptable, needs careful review
-- 30-49: Concerning, thorough review required
-- 0-29: Major issues, extensive review needed
-
-## Response Format
-
-Respond ONLY with valid JSON (no markdown, no explanation outside JSON):
-
-```json
-{{
-  "good_points": [
-    "Well-structured error handling",
-    "Proper input validation prevents injection attacks",
-    "Comprehensive edge case coverage"
-  ],
-  "attention_required": [
-    "[CRITICAL] SQL injection vulnerability in user_query() function at line 42",
-    "[HIGH] Missing null check could cause runtime crash in processData()",
-    "[MEDIUM] Inconsistent naming convention violates style guide"
-  ],
-  "risk_factors": [
-    "No tests for new authentication flow",
-    "Complex async state management may introduce race conditions"
-  ],
-  "overall_quality_score": 65,
-  "estimated_review_time": "45min",
-  "review_summary": "This PR implements required features but has critical security vulnerabilities that must be addressed before merge. Code quality is generally good with room for improvement in test coverage."
-}}
-```
-
-Provide constructive, actionable feedback.
+Use line numbers from the NEW code (lines with + prefix in diff)
