@@ -9,7 +9,6 @@ AI-powered pull request review assistant for Bitbucket.
 - 📊 **Interactive TUI**: Beautiful terminal UI for navigating PRs
 - 📝 **Multiple Export Formats**: Terminal, Markdown, and JSON reports
 - ⚡ **Parallel Processing**: Analyzes multiple PRs concurrently
-- 🎨 **Custom Prompts**: Create your own analysis prompts
 - 🔍 **Large PR Handling**: Intelligently handles PRs too large for AI analysis
 - 🔐 **API Token Authentication**: Secure authentication using Bitbucket API Tokens
 - 🌐 **Workspace-Wide Search**: Search all repos in your workspace at once
@@ -211,9 +210,6 @@ pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123
 
 # Combine with local diff mode for large PRs
 pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --local-diff
-
-# Use custom prompt for single PR
-pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --prompt security-focused
 ```
 
 ### Skip AI Analysis
@@ -270,12 +266,6 @@ pr-review review myworkspace --max-prs 50
 pr-review review myworkspace -m 5
 ```
 
-### Use Custom Prompt
-
-```bash
-pr-review review myworkspace --prompt security-focused
-```
-
 ### Local Git Diff Mode (Analyze Large PRs)
 
 By default, the tool uses the Bitbucket API to fetch diffs, which skips PRs larger than 50,000 characters. With `--local-diff`, repositories are cloned locally and diffs are generated using git, allowing analysis of PRs of **any size**.
@@ -305,17 +295,57 @@ pr-review review myworkspace myrepo --local-diff -m 50
 - 💾 Limited disk space
 - 🚫 No git installation available
 
-### List Available Prompts
-
-```bash
-pr-review prompts --list
-```
-
 ### View Cache Statistics
 
 ```bash
 pr-review cache-stats
 ```
+
+### Customizing the AI Prompt
+
+To customize the AI analysis prompt, edit this file:
+
+```bash
+~/.pr-review-cli/prompts/default.md
+```
+
+If the file doesn't exist, it will be auto-created with the default prompt on first run.
+
+**Supported placeholders:**
+- `{title}` - PR title
+- `{author}` - PR author
+- `{source}` - Source branch
+- `{destination}` - Destination branch
+- `{diff}` - Diff content
+
+**Example `default.md`:**
+```markdown
+---
+name: "Security Focused Review"
+description: "Focuses on security vulnerabilities"
+---
+
+Analyze this pull request with a security focus:
+
+PR Title: {title}
+Author: {author}
+Branch: {source} → {destination}
+
+Diff:
+{diff}
+
+Please identify security vulnerabilities, sensitive data exposure,
+and authorization issues. Respond with valid JSON:
+{
+  "good_points": ["..."],
+  "attention_required": ["..."],
+  "risk_factors": ["..."],
+  "overall_quality_score": 85,
+  "estimated_review_time": "15min"
+}
+```
+
+After saving, restart the CLI - your changes take effect immediately.
 
 ## Interactive TUI Shortcuts
 
@@ -358,69 +388,11 @@ PRs too large for AI analysis (>50K characters) automatically get:
 - Larger PRs may take longer to analyze but will receive full AI insights
 - Recommended for analyzing massive refactors or migrations
 
-## Custom Prompts
-
-Create custom analysis prompts by adding markdown files to `~/.pr-review-cli/prompts/`:
-
-```bash
-~/.pr-review-cli/prompts/
-├── default.md                 # Auto-created
-├── security-focused.md        # Security-focused review
-├── performance-review.md      # Performance analysis
-└── quick-scan.md             # Fast overview
-```
-
-### Prompt Format
-
-Each prompt file should use these placeholders:
-- `{title}`: PR title
-- `{author}`: PR author
-- `{source}`: Source branch
-- `{destination}`: Destination branch
-- `{diff}`: Diff content
-
-Example (`security-focused.md`):
-```markdown
----
-name: "Security Focused Review"
-description: "Focuses on security vulnerabilities and best practices"
-version: "1.0"
----
-
-Analyze this pull request with a focus on security:
-
-**PR Title**: {title}
-**Author**: {author}
-**Branch**: {source} → {destination}
-
-**Diff**:
-{diff}
-
-Please identify:
-1. Security vulnerabilities (SQL injection, XSS, authentication issues)
-2. Sensitive data exposure (API keys, passwords, tokens)
-3. Authorization issues (access control bypass)
-4. Cryptographic issues (weak algorithms, hardcoded keys)
-5. Dependency vulnerabilities
-
-Respond with valid JSON:
-{
-  "good_points": ["Well-implemented security pattern..."],
-  "attention_required": ["SQL injection vulnerability in..."],
-  "risk_factors": ["Uses hardcoded credentials..."],
-  "overall_quality_score": 85,
-  "estimated_review_time": "45 minutes"
-}
-```
-
 ## Examples
 
 ### Morning Review Routine
 
 ```bash
-# Check all PRs across all projects
-pr-review review acme-corp --prompt quick-scan
-
 # Generate daily report
 pr-review review acme-corp \
   --no-interactive \
@@ -438,28 +410,11 @@ pr-review review backend-team
 pr-review review acme-corp payment-service
 ```
 
-### Security-Focused Review
-
-```bash
-# Security audit across all repositories
-pr-review review acme-corp --prompt security-focused -m 50
-```
-
-### Performance Review
-
-```bash
-# Analyze performance implications
-pr-review review acme-corp --prompt performance-review
-```
-
 ### Single PR Quick Review
 
 ```bash
 # Analyze a specific PR without AI (fastest)
 pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --skip-analyze
-
-# Deep dive on a single PR
-pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --prompt security-focused
 
 # Large PR analysis with local git
 pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --local-diff
@@ -618,13 +573,12 @@ API Tokens are:
 ```
 ~/.pr-review-cli/              # Config directory (auto-created)
 ├── .env                       # Your credentials ⚠️ NEVER commit
+├── prompts/                   # Custom AI prompts
+│   └── default.md            # Edit this to customize analysis
 ├── cache/                     # Cached data
 │   ├── git_repos/            # Cloned repos for --local-diff mode
 │   │   └── workspace/        # Bare git repositories
 │   └── author_history.json   # Author PR tracking
-└── prompts/                   # Custom analysis prompts
-    ├── default.md            # Auto-created
-    └── *.md                  # Your custom prompts
 
 ~/projects/pr-review-cli/      # Project directory (if installed from source)
 ├── .env.example               # Example template

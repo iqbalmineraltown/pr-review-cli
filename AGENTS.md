@@ -36,7 +36,6 @@ PR Review CLI is a sophisticated CLI tool that:
 │   ├── bitbucket_client.py        # Bitbucket API integration (Basic Auth)
 │   ├── claude_analyzer.py         # Claude CLI integration
 │   ├── priority_scorer.py         # Risk scoring logic
-│   ├── prompt_loader.py           # Custom prompt/skills loader
 │   ├── git_diff_manager.py        # Local git diff management
 │   ├── presenters/
 │   │   ├── __init__.py
@@ -58,11 +57,8 @@ PR Review CLI is a sophisticated CLI tool that:
 
 ~/.pr-review-cli/                  # User config directory (auto-created)
 ├── .env                           # API Token credentials (gitignored)
-├── prompts/                       # Custom analysis prompts
-│   ├── default.md                 # Auto-created
-│   ├── security-focused.md
-│   ├── performance-review.md
-│   └── quick-scan.md
+├── prompts/                       # AI prompt templates
+│   └── default.md                # Edit to customize AI analysis
 └── cache/                         # Cached data
     ├── git_repos/                # Cloned repositories (for --local-diff mode)
     │   └── workspace/            # Bare git repositories
@@ -122,13 +118,21 @@ GET /user
 - Robust error handling and timeouts
 
 **Key Methods:**
-- `analyze_pr(pr, diff_content, prompt_template)` - Analyze single PR
-- `analyze_prs_parallel(prs_with_diffs, prompt_template)` - Batch analysis
+- `analyze_pr(pr, diff_content)` - Analyze single PR
+- `analyze_prs_parallel(prs_with_diffs)` - Batch analysis
+- `_load_default_prompt()` - Load prompt from `~/.pr-review-cli/prompts/default.md`
 
 **Large PR Handling:**
 - PRs > 50,000 characters skip AI analysis
 - Returns special result: `{"skipped": True, "reason": "diff_too_large"}`
 - These PRs get automatic high priority (90-100 points)
+
+**Prompt Configuration:**
+- Loads prompt from `~/.pr-review-cli/prompts/default.md`
+- If file doesn't exist, creates it with built-in default prompt
+- Supports optional YAML frontmatter (name, description, version)
+- Edit the file to customize the AI analysis prompt
+- No CLI options needed - changes take effect on next run
 
 **Prompt Template Placeholders:**
 - `{title}` - PR title
@@ -202,34 +206,7 @@ GET /user
 - Updated after each review run
 - Helps identify experienced contributors over time
 
-### 4. PromptLoader (`prompt_loader.py`)
-
-**Purpose:** Loads and manages custom analysis prompts
-
-**Key Features:**
-- Loads prompts from `~/.pr-review-cli/prompts/`
-- Auto-creates default prompt if missing
-- Auto-copies built-in prompts from project folder on first run
-- Supports frontmatter metadata
-- Validates prompt placeholders
-
-**Frontmatter Format:**
-```yaml
----
-name: "Security Focused Review"
-description: "Focuses on security vulnerabilities and best practices"
-version: "1.0"
----
-
-Prompt content here...
-```
-
-**Key Methods:**
-- `load_prompt(prompt_name)` - Load specific prompt
-- `list_prompts()` - List all available prompts
-- `_create_default_prompt()` - Auto-create default prompt
-
-### 5. LocalGitDiffManager (`git_diff_manager.py`)
+### 4. LocalGitDiffManager (`git_diff_manager.py`)
 
 **Purpose:** Manages local git repository caching and diff generation
 
@@ -247,7 +224,7 @@ Prompt content here...
 
 **Cache Location:** `~/.pr-review-cli/cache/git_repos/workspace/`
 
-### 6. GitOperations (`utils/git_operations.py`)
+### 5. GitOperations (`utils/git_operations.py`)
 
 **Purpose:** Async subprocess wrapper for git commands
 
@@ -263,7 +240,7 @@ Prompt content here...
 - `get_diff(repo_path, source_branch, destination_branch)` - Generate unified diff
 - `verify_git_available()` - Check if git is installed
 
-### 7. Config (`config.py`)
+### 6. Config (`config.py`)
 
 **Purpose:** Configuration management with environment variable validation
 
@@ -294,7 +271,7 @@ Prompt content here...
 - `has_valid_credentials` - Check if valid credentials exist
 - `_print_credentials_warning()` - Print helpful setup message
 
-### 8. Models (`models.py`)
+### 7. Models (`models.py`)
 
 **Pydantic Models:**
 - `BitbucketPR` - Raw PR data from Bitbucket API
@@ -305,7 +282,7 @@ Prompt content here...
 - `PRWithPriority` - PR with priority score and risk level
 - `UserInfo` - User information from Bitbucket
 
-### 9. InteractiveTUI (`presenters/interactive_tui.py`)
+### 8. InteractiveTUI (`presenters/interactive_tui.py`)
 
 **Purpose:** Textual-based interactive terminal UI
 
@@ -322,7 +299,7 @@ Prompt content here...
 - `o`: Open PR in browser
 - `q`: Quit
 
-### 10. ReportGenerator (`presenters/report_generator.py`)
+### 9. ReportGenerator (`presenters/report_generator.py`)
 
 **Purpose:** Generate static reports in multiple formats
 
@@ -337,13 +314,12 @@ Prompt content here...
 - Priority score display
 - Statistical summary
 
-### 11. Main CLI (`main.py`)
+### 10. Main CLI (`main.py`)
 
 **Purpose:** Entry point and CLI orchestration
 
 **Commands:**
 - `review [workspace] [repo]` - Fetch and analyze PRs
-- `prompts --list` - List available custom prompts
 - `cache-stats` - Show author history statistics
 
 **CLI Options:**
@@ -352,7 +328,6 @@ Prompt content here...
 - `--interactive/--no-interactive, -i/-I` - Enable/disable TUI mode (default: enabled)
 - `--export {terminal,markdown,json}, -e` - Export format
 - `--output FILE, -o` - Output filename (for markdown/json)
-- `--prompt NAME, -p` - Use custom prompt
 - `--max-prs N, -m` - Limit number of PRs (default: 30)
 - `--local-diff/--api-diff` - Use local git cloning vs API for diffs
 - `--cleanup-git-cache` - Clean stale cached repositories before running (requires --local-diff)
@@ -604,7 +579,6 @@ Current test coverage:
 
 Recommended additions:
 - Test BitbucketClient with mock API
-- Test PromptLoader with various prompts
 - Test Config validation
 - Test ClaudeAnalyzer with mock Claude CLI
 - Integration test for full workflow
@@ -658,7 +632,6 @@ print('Workspace:', config.bitbucket_workspace)
 5. **Local Caching** - Improves author history tracking over time
 6. **Large PR Handling** - Graceful degradation instead of failure
 7. **Multiple Output Formats** - Flexibility for different workflows
-8. **Custom Prompts** - Adaptability to team-specific needs
 
 ## Future Enhancements
 

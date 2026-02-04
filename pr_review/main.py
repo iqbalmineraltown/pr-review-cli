@@ -7,7 +7,6 @@ from .config import Config
 from .bitbucket_client import BitbucketClient
 from .claude_analyzer import ClaudeAnalyzer
 from .priority_scorer import PriorityScorer
-from .prompt_loader import PromptLoader
 from .models import PRAnalysis
 from .presenters.interactive_tui import launch_interactive_tui
 from .presenters.report_generator import (
@@ -25,7 +24,6 @@ def review(
     workspace: str = typer.Argument(None, help="Bitbucket workspace (default: from PR_REVIEWER_BITBUCKET_WORKSPACE env var)"),
     repo: str = typer.Argument(None, help="Repository name (optional - if not specified, searches all repos in workspace)"),
     pr_url: str = typer.Option(None, "--pr-url", help="Bitbucket PR URL to analyze (e.g., https://bitbucket.org/workspace/repo/pull-requests/123)"),
-    prompt: str = typer.Option("default", "--prompt", "-p", help="Custom prompt to use"),
     skip_analyze: bool = typer.Option(False, "--skip-analyze", help="Skip AI analysis and show PR summary only"),
     interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i/-I"),
     export: str = typer.Option(None, "--export", "-e", help="Export format: markdown/json"),
@@ -127,26 +125,6 @@ def review(
         except RuntimeError as e:
             console.print(f"[red]Error: {e}[/red]")
             raise typer.Exit(1)
-
-        # Initialize prompt loader (creates directories if needed)
-        prompt_loader = PromptLoader(config.config_dir)
-
-        # Show prompt notification
-        console.print("\n[dim]💡 Custom prompts available in:[/dim]")
-        console.print(f"   [dim]{prompt_loader.prompts_dir}[/dim]")
-        console.print(f"   [dim]Drop .md files there to create custom analysis prompts![/dim]\n")
-
-        # Verify requested prompt exists
-        available_prompts = prompt_loader.list_prompts()
-        if prompt not in available_prompts:
-            console.print(f"[red]Error:[/red] Prompt '{prompt}' not found!")
-            console.print(f"\n[cyan]Available prompts:[/cyan]")
-            for p in available_prompts:
-                console.print(f"  • {p}")
-            raise typer.Exit(1)
-
-        # Load the custom prompt
-        prompt_template = prompt_loader.load_prompt(prompt)
 
         # 1. Initialize Bitbucket client and auto-detect current user
         with console.status("[cyan]Connecting to Bitbucket...[/cyan]"):
@@ -314,7 +292,7 @@ def review(
                         for pr in prs
                     ]
                 else:
-                    analyzer = ClaudeAnalyzer(prompt_template=prompt_template)
+                    analyzer = ClaudeAnalyzer()
                     # Extract diff content from PRDiff objects
                     diff_contents = [diff.diff_content for diff in diffs]
 
@@ -452,43 +430,6 @@ def review(
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user[/yellow]")
         raise typer.Exit(0)
-
-
-@app.command()
-def prompts(
-    list_only: bool = typer.Option(False, "--list", "-l", help="List available prompts"),
-):
-    """Manage custom analysis prompts"""
-    prompt_loader = PromptLoader()
-
-    console.print(f"\n[cyan]Prompt Directory:[/cyan] {prompt_loader.prompts_dir}\n")
-
-    available_prompts = prompt_loader.list_prompts()
-
-    if list_only:
-        console.print("[bold]Available Prompts:[/bold]\n")
-        for prompt_name in available_prompts:
-            metadata = prompt_loader.get_prompt_metadata(prompt_name)
-            description = metadata.get("description", "No description")
-            tags = metadata.get("tags", [])
-
-            console.print(f"  • [bold]{prompt_name}[/bold]")
-            if description:
-                console.print(f"    {description}")
-            if tags:
-                console.print(f"    [dim]Tags: {', '.join(tags)}[/dim]")
-            console.print()
-    else:
-        console.print("[bold]Available Prompts:[/bold]\n")
-        for prompt_name in available_prompts:
-            console.print(f"  • {prompt_name}")
-
-        console.print("\n[bold]Usage:[/bold]")
-        console.print("  pr-review review <workspace> <repo> --prompt <name>")
-        console.print("\n[bold]To create a custom prompt:[/bold]")
-        console.print(f"  1. Create a .md file in: {prompt_loader.prompts_dir}")
-        console.print("  2. Use placeholders: {title}, {author}, {source}, {destination}, {diff}")
-        console.print("  3. Response must be valid JSON format")
 
 
 @app.command()

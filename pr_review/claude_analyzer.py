@@ -40,8 +40,32 @@ Do not include any other text outside the JSON.'''
         config = Config()
         self.claude_cli_command = config.claude_cli_command
         self.claude_cli_flags = config.claude_cli_flags
-        self.prompt_template = prompt_template or self.DEFAULT_PROMPT
+        self.prompt_template = prompt_template or self._load_default_prompt()
         self._print_config_shown = False
+
+    def _load_default_prompt(self) -> str:
+        """Load default prompt from markdown file, or use built-in default."""
+        config = Config()
+        prompts_dir = config.config_dir / "prompts"
+        default_prompt_file = prompts_dir / "default.md"
+
+        if default_prompt_file.exists():
+            try:
+                content = default_prompt_file.read_text()
+                # Remove frontmatter if present
+                if content.startswith('---'):
+                    # Find end of frontmatter
+                    end_idx = content.find('\n---', 3)
+                    if end_idx != -1:
+                        content = content[end_idx + 4:].strip()
+                return content
+            except Exception:
+                pass  # Fall through to default
+
+        # Create default prompt file if it doesn't exist
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        default_prompt_file.write_text(self.DEFAULT_PROMPT)
+        return self.DEFAULT_PROMPT
 
     def _print_ai_config_once(self):
         """Print AI CLI config once"""
