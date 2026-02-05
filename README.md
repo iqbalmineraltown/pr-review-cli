@@ -7,7 +7,8 @@ AI-powered pull request review assistant for Bitbucket.
 - 🤖 **AI-Powered Analysis**: Uses Claude to analyze PR diffs and extract insights
 - 🎯 **Smart Prioritization**: Automatically ranks PRs by risk and importance
 - 📊 **Interactive TUI**: Beautiful terminal UI for navigating PRs
-- 📝 **Multiple Export Formats**: Terminal, Markdown, and JSON reports
+- 💬 **Inline Comments**: Per-line code comments with severity levels (critical/high/medium/low)
+- 📝 **Post Comments**: One-click posting of summary and inline comments to PRs
 - ⚡ **Parallel Processing**: Analyzes multiple PRs concurrently
 - 🔍 **Large PR Handling**: Intelligently handles PRs too large for AI analysis
 - 🔐 **API Token Authentication**: Secure authentication using Bitbucket API Tokens
@@ -309,30 +310,36 @@ To customize the AI analysis prompt, edit this file:
 ~/.pr-review-cli/prompts/default.md
 ```
 
-If the file doesn't exist, it will be auto-created with the default prompt on first run.
+On first run, this file is auto-created from built-in prompts in the project. The project includes several prompt templates:
+
+- `default.md` - Inline comments focused (recommended)
+- `quick-scan.md` - Fast reviews without inline comments
+- `security-focused.md` - Security vulnerability focused
+- `performance-review.md` - Performance and optimization focused
 
 **Supported placeholders:**
-- `{title}` - PR title
-- `{author}` - PR author
-- `{source}` - Source branch
-- `{destination}` - Destination branch
-- `{diff}` - Diff content
+- `{{{title}}}` - PR title (use triple braces for Jinja2-style escaping)
+- `{{{author}}}` - PR author
+- `{{{source}}}` - Source branch
+- `{{{destination}}}` - Destination branch
+- `{{{diff}}}` - Diff content
 
 **Example `default.md`:**
 ```markdown
 ---
 name: "Security Focused Review"
 description: "Focuses on security vulnerabilities"
+version: "1.0"
 ---
 
 Analyze this pull request with a security focus:
 
-PR Title: {title}
-Author: {author}
-Branch: {source} → {destination}
+PR Title: {{{title}}}
+Author: {{{author}}}
+Branch: {{{source}}} → {{{destination}}}
 
 Diff:
-{diff}
+{{{diff}}}
 
 Please identify security vulnerabilities, sensitive data exposure,
 and authorization issues. Respond with valid JSON:
@@ -341,7 +348,34 @@ and authorization issues. Respond with valid JSON:
   "attention_required": ["..."],
   "risk_factors": ["..."],
   "overall_quality_score": 85,
-  "estimated_review_time": "15min"
+  "estimated_review_time": "15min",
+  "line_comments": [
+    {
+      "file_path": "src/auth.py",
+      "line_number": 42,
+      "severity": "critical",
+      "message": "SQL injection vulnerability"
+    }
+  ]
+}
+```
+
+**Expected JSON Response:**
+```json
+{
+  "good_points": ["Well-implemented pattern"],
+  "attention_required": ["Bug found"],
+  "risk_factors": ["Breaking change"],
+  "overall_quality_score": 85,
+  "estimated_review_time": "30 minutes",
+  "line_comments": [
+    {
+      "file_path": "src/file.py",
+      "line_number": 123,
+      "severity": "high",
+      "message": "Missing error handling"
+    }
+  ]
 }
 ```
 
@@ -352,7 +386,48 @@ After saving, restart the CLI - your changes take effect immediately.
 - `↑/↓` or `j/k`: Navigate PRs
 - `Enter`: View full details
 - `o`: Open PR in browser
+- `p`: Post comments (summary + inline comments) to PR
 - `q`: Quit
+
+### Posting Comments
+
+When you press `p` to post comments, the tool:
+
+1. **Exits TUI** and shows a terminal UI
+2. **Posts a summary comment** with:
+   - Priority score and quality score
+   - Good points, attention items, risk factors
+   - Formatted as markdown
+
+3. **Posts inline comments** (if available) with:
+   - File path and line number
+   - Severity level (critical/high/medium/low)
+   - Brief message describing the issue
+
+4. **Auto-resumes** the TUI after 5 seconds
+
+The summary comment is formatted as:
+```markdown
+## 🤖 AI PR Review: {PR Title}
+
+**Priority Score:** 85/100
+**Quality Score:** 75/100
+**Est. Review Time:** 30-45 min
+
+### ✅ Good Points
+- Well-implemented pattern
+
+### ⚠️ Attention Required
+- Bug found in line 42
+
+### 🔍 Risk Factors
+- Breaking change
+
+---
+*Posted by PR Review CLI*
+```
+
+Inline comments are posted separately and appear on specific lines in the diff view.
 
 ## Priority Levels
 
