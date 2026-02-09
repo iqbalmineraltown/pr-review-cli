@@ -15,6 +15,7 @@ AI-powered pull request review assistant for Bitbucket.
 - 🌐 **Workspace-Wide Search**: Search all repos in your workspace at once
 - ⏰ **Age-Based Prioritization**: Older PRs get higher priority to prevent bottlenecks
 - 💾 **Local Git Diff Mode**: Clone repos locally to bypass API limits and analyze PRs of any size
+- ⚔️ **PR Defense Council**: Multi-agent deep review with specialized reviewer personas
 
 ## Prerequisites
 
@@ -296,19 +297,145 @@ pr-review review myworkspace myrepo --local-diff -m 50
 - 💾 Limited disk space
 - 🚫 No git installation available
 
+### PR Defense Council Mode (Multi-Agent Deep Review)
+
+PR Defense Council mode uses **multiple specialized AI reviewer agents** to analyze each PR in parallel, each from a different perspective. This provides deeper, more comprehensive code review than standard mode.
+
+```bash
+# Use PR Defense Council for deep multi-perspective review
+pr-review review workspace repo --pr-defense
+
+# Combine with other flags
+pr-review review workspace repo --pr-defense --no-interactive --export markdown
+
+# Single PR with PR Defense Council
+pr-review review --pr-url https://bitbucket.org/workspace/repo/pull-requests/123 --pr-defense
+
+# Auto-post council review
+pr-review review workspace repo --pr-defense --post
+```
+
+#### How It Works
+
+**Standard Mode (default):**
+- 1 AI agent → 3 PRs in parallel
+- Fast, high-level review
+- Best for: Quick daily reviews, small PRs
+
+**PR Defense Council Mode (`--pr-defense`):**
+- 3 specialized agents → 1 PR in parallel
+- Deep, multi-perspective review
+- Best for: Critical PRs, security-sensitive code, complex changes
+
+#### The Three Reviewer Personas
+
+Each PR is analyzed by three specialized reviewers:
+
+1. **Security Sentinel** 🔒
+   - Focuses on: OWASP Top 10, SQL injection, XSS, CSRF
+   - Checks: Authentication, authorization, sensitive data exposure
+   - Identifies: Cryptographic issues, input validation flaws
+
+2. **Performance Pursuer** ⚡
+   - Focuses on: Algorithm efficiency, Big O complexity
+   - Checks: N+1 queries, caching strategies, memory usage
+   - Identifies: I/O bottlenecks, concurrency issues, resource leaks
+
+3. **Code Quality Custodian** 🧹
+   - Focuses on: SOLID principles, design patterns
+   - Checks: Code duplication, naming conventions, complexity
+   - Identifies: Missing error handling, documentation gaps, test coverage
+
+#### Result Aggregation
+
+Findings from all three personas are intelligently merged:
+
+- ✅ **Good points**: Union of all positive findings
+- ⚠️ **Attention required**: Deduplicated issues from all reviewers
+- 🔍 **Risk factors**: Combined risk assessment
+- 📊 **Quality score**: Average of all three agent scores
+- 💬 **Inline comments**: Merged with severity prioritization
+
+#### When to Use PR Defense Council
+
+**Use `--pr-defense` for:**
+- 🛡️ Security-sensitive changes (auth, payments, data handling)
+- 🏗️ Core infrastructure or architectural changes
+- 🔧 Complex refactors or migrations
+- 📦 High-risk production code
+- 🎯 Critical PRs requiring thorough review
+
+**Use standard mode for:**
+- ⚡ Quick daily reviews
+- 📝 Documentation changes
+- 🐛 Minor bug fixes
+- 🧪 Test updates
+- 🔀 Small feature branches
+
+#### Customizing Reviewer Personas
+
+You can customize any reviewer persona by editing its markdown file:
+
+```bash
+~/.pr-review-cli/reviewers/
+├── README.md                    # Documentation
+├── security-sentinel.md         # Security reviewer
+├── performance-pursuer.md       # Performance reviewer
+└── quality-custodian.md         # Code quality reviewer
+```
+
+Edit any `.md` file to customize the reviewer's prompt. Changes take effect immediately on the next run.
+
+**Adding New Personas:**
+
+1. Create a new `.md` file in `~/.pr-review-cli/reviewers/`
+2. Use the placeholder variables:
+   - `{title}` - PR title
+   - `{author}` - PR author
+   - `{source}` - Source branch
+   - `{destination}` - Destination branch
+   - `{diff}` - Diff content
+3. The persona will be automatically loaded
+
+Example new persona (`testing-guru.md`):
+```markdown
+# Testing Guru
+
+You are the Testing Guru, focused on test coverage, quality, and edge cases.
+
+Analyze this PR:
+
+PR Title: {title}
+Author: {author}
+Branch: {source} → {destination}
+
+Diff:
+{diff}
+
+Focus on:
+- Test coverage gaps
+- Missing edge cases
+- Test quality and assertions
+- Mock/stub usage
+
+Provide JSON output with good_points, attention_required, risk_factors, etc.
+```
+
 ### View Cache Statistics
 
 ```bash
 pr-review cache-stats
 ```
 
-### Customizing the AI Prompt
+### Customizing the AI Prompt (Standard Mode)
 
-To customize the AI analysis prompt, edit this file:
+To customize the AI analysis prompt for **standard mode**, edit this file:
 
 ```bash
 ~/.pr-review-cli/prompts/default.md
 ```
+
+> **Note:** For multi-agent deep review with specialized personas, use `--pr-defense` mode instead. See [PR Defense Council Mode](#pr-defense-council-mode-multi-agent-deep-review) below.
 
 On first run, this file is auto-created from built-in prompts in the project. The project includes several prompt templates:
 
@@ -493,6 +620,22 @@ pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-r
 
 # Large PR analysis with local git
 pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --local-diff
+
+# Deep multi-agent review of critical PR
+pr-review review --pr-url https://bitbucket.org/acme-corp/payment-service/pull-requests/42 --pr-defense
+```
+
+### PR Defense Council Deep Review
+
+```bash
+# Review critical security PR with all three personas
+pr-review review acme-corp auth-service --pr-defense
+
+# Deep review of infrastructure changes
+pr-review review acme-corp infra-repo --pr-defense --no-interactive --export markdown
+
+# Batch review critical PRs and post findings
+pr-review review acme-corp payment-service --pr-defense --post -m 5
 ```
 
 ## Troubleshooting
@@ -650,6 +793,11 @@ API Tokens are:
 ├── .env                       # Your credentials ⚠️ NEVER commit
 ├── prompts/                   # Custom AI prompts
 │   └── default.md            # Edit this to customize analysis
+├── reviewers/                 # PR Defense Council personas
+│   ├── README.md             # Documentation
+│   ├── security-sentinel.md  # Security reviewer persona
+│   ├── performance-pursuer.md # Performance reviewer persona
+│   └── quality-custodian.md  # Code quality reviewer persona
 ├── cache/                     # Cached data
 │   ├── git_repos/            # Cloned repos for --local-diff mode
 │   │   └── workspace/        # Bare git repositories
@@ -668,6 +816,31 @@ API Tokens are:
 - API Tokens are secure and recommended by Bitbucket
 
 ## Advanced Features
+
+### Standard Mode vs PR Defense Council Mode
+
+The tool supports two analysis modes:
+
+| Feature | Standard Mode | PR Defense Council (`--pr-defense`) |
+|---------|--------------|-------------------------------------|
+| **Agents** |  single AI agent | 3 specialized agents per PR |
+| **Parallelism** | 3 PRs in parallel | 3 agents per PR in parallel |
+| **Review depth** | High-level overview | Deep, multi-perspective |
+| **Perspectives** | General code review | Security + Performance + Quality |
+| **Speed** | Faster (3× throughput) | Slower (3× depth per PR) |
+| **Best for** | Daily reviews, small PRs | Critical PRs, security-sensitive code |
+| **Findings** | General issues | Specialized vulnerabilities & risks |
+
+**Example comparison:**
+```bash
+# Standard mode - review 30 PRs quickly
+pr-review review workspace repo -m 30
+# → 1 agent reviews 30 PRs in ~10 minutes
+
+# PR Defense Council - deep review of 10 PRs
+pr-review review workspace repo -m 10 --pr-defense
+# → 3 agents deeply review 10 PRs in ~15 minutes
+```
 
 ### Local Git Diff Mode vs API Mode
 

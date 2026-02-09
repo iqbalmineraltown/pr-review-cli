@@ -48,3 +48,8 @@ def get_git_cache_dir() -> Path:
     cache_dir = get_cache_dir()
     git_cache = cache_dir / "git_repos"
     return git_cache
+
+
+def get_reviewers_dir() -> Path:
+    """Get the reviewer personas directory for PR Defense Council"""
+    return get_config_dir() / "reviewers"

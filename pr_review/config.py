@@ -109,6 +109,11 @@ class Config:
         return get_config_dir()
 
     @property
+    def reviewers_dir(self) -> Path:
+        from .utils.paths import get_reviewers_dir
+        return get_reviewers_dir()
+
+    @property
     def use_ssh_for_git(self) -> bool:
         return os.getenv("PR_REVIEWER_GIT_USE_SSH", "true").lower() == "true"
 

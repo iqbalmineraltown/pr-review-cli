@@ -6,6 +6,7 @@ from pathlib import Path
 from .config import Config
 from .bitbucket_client import BitbucketClient
 from .claude_analyzer import ClaudeAnalyzer
+from .defense_council import DefenseCouncilAnalyzer
 from .priority_scorer import PriorityScorer
 from .models import PRAnalysis
 from .presenters.interactive_tui import launch_interactive_tui
@@ -25,6 +26,7 @@ def review(
     repo: str = typer.Argument(None, help="Repository name (optional - if not specified, searches all repos in workspace)"),
     pr_url: str = typer.Option(None, "--pr-url", help="Bitbucket PR URL to analyze (e.g., https://bitbucket.org/workspace/repo/pull-requests/123)"),
     skip_analyze: bool = typer.Option(False, "--skip-analyze", help="Skip AI analysis and show PR summary only"),
+    pr_defense: bool = typer.Option(False, "--pr-defense", help="Use PR Defense Council mode (multi-agent deep review)"),
     interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i/-I"),
     export: str = typer.Option(None, "--export", "-e", help="Export format: markdown/json"),
     output: str = typer.Option("pr_report", "--output", "-o", help="Output file path"),
@@ -56,6 +58,7 @@ def review(
 
     With --pr-url, analyze a single PR from its Bitbucket URL (automatically non-interactive).
     With --skip-analyze, skip AI analysis and show PR summary only (faster, no API costs).
+    With --pr-defense, use PR Defense Council mode: multiple specialized reviewers analyze each PR in parallel for deeper review.
     With --post, automatically post comments after analysis (non-interactive mode only).
     With --max-inline-comments, limit the number of inline comments per PR.
     With --inline-severity, set minimum severity level for inline comments.
@@ -291,12 +294,33 @@ def review(
                         )
                         for pr in prs
                     ]
-                else:
-                    analyzer = ClaudeAnalyzer()
-                    # Extract diff content from PRDiff objects
+                elif pr_defense:
+                    # PR Defense Council mode: multi-agent deep review
+                    analyzer = DefenseCouncilAnalyzer()
                     diff_contents = [diff.diff_content for diff in diffs]
 
-                    # Create progress tracking
+                    total_prs = len(prs)
+                    status = console.status("[cyan]Initializing PR Defense Council...[/cyan]")
+                    status.start()
+
+                    def update_progress(current, total, title):
+                        truncated_title = title[:40] + "..." if len(title) > 40 else title
+                        status.update(f"[cyan]Council reviewing PR {current}/{total}:[/cyan] {truncated_title}")
+
+                    try:
+                        # Defense Council processes PRs sequentially (each uses parallel agents)
+                        analyses = await analyzer.analyze_prs(
+                            prs,
+                            diff_contents,
+                            progress_callback=update_progress
+                        )
+                    finally:
+                        status.stop()
+                else:
+                    # Standard mode: parallel PR processing with single agent
+                    analyzer = ClaudeAnalyzer()
+                    diff_contents = [diff.diff_content for diff in diffs]
+
                     total_prs = len(prs)
                     status = console.status("[cyan]Initializing analysis...[/cyan]")
                     status.start()

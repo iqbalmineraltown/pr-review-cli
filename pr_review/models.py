@@ -62,3 +62,11 @@ class UserInfo(BaseModel):
     uuid: str
     username: str
     display_name: str
+
+
+class ReviewerPersona(BaseModel):
+    """A reviewer persona for PR Defense Council mode"""
+    name: str  # e.g., "Security Sentinel"
+    slug: str  # e.g., "security-sentinel"
+    description: str  # e.g., "Focuses on security vulnerabilities..."
+    prompt: str  # The full prompt template for this persona
