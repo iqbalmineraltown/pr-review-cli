@@ -130,12 +130,12 @@ def review(
             raise typer.Exit(1)
 
         # 1. Initialize Bitbucket client and auto-detect current user
-        with console.status("[cyan]Connecting to Bitbucket...[/cyan]"):
-            async with BitbucketClient(
-                email=config.bitbucket_email,
-                api_token=config.bitbucket_api_token,
-                base_url=config.bitbucket_base_url
-            ) as client:
+        console.print("[cyan]📡 Connecting to Bitbucket...[/cyan]")
+        async with BitbucketClient(
+            email=config.bitbucket_email,
+            api_token=config.bitbucket_api_token,
+            base_url=config.bitbucket_base_url
+        ) as client:
                 current_user = None
 
                 # Initialize local git manager if local diff mode is enabled
@@ -300,48 +300,48 @@ def review(
                     diff_contents = [diff.diff_content for diff in diffs]
 
                     total_prs = len(prs)
-                    status = console.status("[cyan]Initializing PR Defense Council...[/cyan]")
-                    status.start()
+
+                    # Use a simple list to track the mutable status reference
+                    status_ref = [None]
 
                     def update_progress(current, total, title):
                         truncated_title = title[:40] + "..." if len(title) > 40 else title
-                        status.update(f"[cyan]Council reviewing PR {current}/{total}:[/cyan] {truncated_title}")
+                        if status_ref[0]:
+                            status_ref[0].update(f"[cyan]Council reviewing PR {current}/{total}:[/cyan] {truncated_title}")
 
-                    try:
-                        # Defense Council processes PRs sequentially (each uses parallel agents)
-                        analyses = await analyzer.analyze_prs(
-                            prs,
-                            diff_contents,
-                            progress_callback=update_progress
-                        )
-                    finally:
-                        status.stop()
+                    # Print initial status without using Rich status to avoid conflicts
+                    console.print("[cyan]⚔️  Initializing PR Defense Council...[/cyan]")
+
+                    # Defense Council processes PRs sequentially (each uses parallel agents)
+                    analyses = await analyzer.analyze_prs(
+                        prs,
+                        diff_contents,
+                        progress_callback=update_progress
+                    )
                 else:
                     # Standard mode: parallel PR processing with single agent
                     analyzer = ClaudeAnalyzer()
                     diff_contents = [diff.diff_content for diff in diffs]
 
                     total_prs = len(prs)
-                    status = console.status("[cyan]Initializing analysis...[/cyan]")
-                    status.start()
+
+                    # Print initial status without using Rich status to avoid conflicts
+                    console.print("[cyan]🤖 Initializing AI analysis...[/cyan]")
 
                     def update_progress(current, total, title):
                         truncated_title = title[:40] + "..." if len(title) > 40 else title
-                        status.update(f"[cyan]Analyzing PR {current}/{total}:[/cyan] {truncated_title}")
+                        console.print(f"[cyan]  Analyzing PR {current}/{total}:[/cyan] {truncated_title}")
 
-                    try:
-                        # For local diffs, analyze all PRs regardless of size
-                        # For API diffs, skip large PRs (>50K chars)
-                        skip_large = not local_diff
+                    # For local diffs, analyze all PRs regardless of size
+                    # For API diffs, skip large PRs (>50K chars)
+                    skip_large = not local_diff
 
-                        analyses = await analyzer.analyze_prs_parallel(
-                            prs,
-                            diff_contents,
-                            progress_callback=update_progress,
-                            skip_large=skip_large
-                        )
-                    finally:
-                        status.stop()
+                    analyses = await analyzer.analyze_prs_parallel(
+                        prs,
+                        diff_contents,
+                        progress_callback=update_progress,
+                        skip_large=skip_large
+                    )
 
                 # 4. Calculate priority scores
                 with console.status("[cyan]Calculating priorities...[/cyan]"):

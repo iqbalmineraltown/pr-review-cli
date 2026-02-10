@@ -335,7 +335,7 @@ class DefenseCouncilAnalyzer:
             parsed_json = json.loads(json_str)
 
             # Handle GLM format
-            analysis_data = self._extract_analysis_data(parsed_json)
+            analysis_data = self._extract_analysis_data(parsed_json, persona.name)
 
             # Extract line_comments
             line_comments_raw = analysis_data.get("line_comments", [])
@@ -366,14 +366,26 @@ class DefenseCouncilAnalyzer:
                 estimated_review_time="Unknown"
             )
         except (json.JSONDecodeError, ValueError, RuntimeError) as e:
-            return PRAnalysis(
-                pr_id=pr.id,
-                good_points=[],
-                attention_required=[f"{persona.name} analysis failed: {str(e)[:100]}"],
-                risk_factors=["Persona error"],
-                overall_quality_score=50,
-                estimated_review_time="Unknown"
-            )
+            # Provide more detailed error for debugging
+            error_msg = str(e)
+            if "No JSON found" in error_msg:
+                return PRAnalysis(
+                    pr_id=pr.id,
+                    good_points=[],
+                    attention_required=[f"{persona.name}: AI response did not contain valid JSON"],
+                    risk_factors=["AI response format error"],
+                    overall_quality_score=50,
+                    estimated_review_time="Unknown"
+                )
+            else:
+                return PRAnalysis(
+                    pr_id=pr.id,
+                    good_points=[],
+                    attention_required=[f"{persona.name}: Analysis failed - {error_msg[:150]}"],
+                    risk_factors=["Persona analysis error"],
+                    overall_quality_score=50,
+                    estimated_review_time="Unknown"
+                )
         finally:
             try:
                 os.unlink(prompt_file)
@@ -414,7 +426,7 @@ class DefenseCouncilAnalyzer:
 
         raise RuntimeError("Claude CLI produced no output")
 
-    def _extract_analysis_data(self, parsed_json: dict) -> dict:
+    def _extract_analysis_data(self, parsed_json: dict, persona_name: str = "AI") -> dict:
         """Extract analysis data from GLM or Claude CLI format"""
         if isinstance(parsed_json, dict) and "type" in parsed_json and "result" in parsed_json:
             result_content = parsed_json.get("result", "")
@@ -438,11 +450,12 @@ class DefenseCouncilAnalyzer:
 
             try:
                 return json.loads(result_content)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                # Return more descriptive error with persona name
                 return {
                     "good_points": [],
-                    "attention_required": ["Failed to parse response"],
-                    "risk_factors": ["Parsing error"],
+                    "attention_required": [f"{persona_name}: Failed to parse AI response (invalid JSON format)"],
+                    "risk_factors": ["AI response parsing error"],
                     "overall_quality_score": 50,
                     "estimated_review_time": "30min",
                     "line_comments": []
