@@ -300,48 +300,58 @@ def review(
                     diff_contents = [diff.diff_content for diff in diffs]
 
                     total_prs = len(prs)
-
-                    # Use a simple list to track the mutable status reference
-                    status_ref = [None]
-
-                    def update_progress(current, total, title):
-                        truncated_title = title[:40] + "..." if len(title) > 40 else title
-                        if status_ref[0]:
-                            status_ref[0].update(f"[cyan]Council reviewing PR {current}/{total}:[/cyan] {truncated_title}")
-
-                    # Print initial status without using Rich status to avoid conflicts
-                    console.print("[cyan]⚔️  Initializing PR Defense Council...[/cyan]")
+                    console.print(f"[cyan]⚔️  PR Defense Council: Analyzing {total_prs} PR(s) with 3 personas each...[/cyan]\n")
 
                     # Defense Council processes PRs sequentially (each uses parallel agents)
-                    analyses = await analyzer.analyze_prs(
-                        prs,
-                        diff_contents,
-                        progress_callback=update_progress
-                    )
+                    # Create progress tracking
+                    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TaskProgressColumn(),
+                        console=console,
+                        transient=True
+                    ) as progress:
+                        task = progress.add_task("[cyan]Council review progress[/cyan]", total=total_prs)
+
+                        def update_progress(current, total, title):
+                            progress.update(task, advance=1, description=f"[cyan]Reviewing: {title[:30]}[/cyan]")
+
+                        analyses = await analyzer.analyze_prs(prs, diff_contents, progress_callback=update_progress)
                 else:
                     # Standard mode: parallel PR processing with single agent
                     analyzer = ClaudeAnalyzer()
                     diff_contents = [diff.diff_content for diff in diffs]
 
                     total_prs = len(prs)
-
-                    # Print initial status without using Rich status to avoid conflicts
-                    console.print("[cyan]🤖 Initializing AI analysis...[/cyan]")
-
-                    def update_progress(current, total, title):
-                        truncated_title = title[:40] + "..." if len(title) > 40 else title
-                        console.print(f"[cyan]  Analyzing PR {current}/{total}:[/cyan] {truncated_title}")
+                    console.print(f"[cyan]🤖 Analyzing {total_prs} PR(s) with AI (3 in parallel)...[/cyan]\n")
 
                     # For local diffs, analyze all PRs regardless of size
                     # For API diffs, skip large PRs (>50K chars)
                     skip_large = not local_diff
 
-                    analyses = await analyzer.analyze_prs_parallel(
-                        prs,
-                        diff_contents,
-                        progress_callback=update_progress,
-                        skip_large=skip_large
-                    )
+                    # Create progress tracking
+                    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TaskProgressColumn(),
+                        console=console,
+                        transient=True
+                    ) as progress:
+                        task = progress.add_task("[cyan]AI analysis progress[/cyan]", total=total_prs)
+
+                        def update_progress(current, total, title):
+                            progress.update(task, advance=1, description=f"[cyan]Analyzing: {title[:30]}[/cyan]")
+
+                        analyses = await analyzer.analyze_prs_parallel(
+                            prs,
+                            diff_contents,
+                            progress_callback=update_progress,
+                            skip_large=skip_large
+                        )
 
                 # 4. Calculate priority scores
                 with console.status("[cyan]Calculating priorities...[/cyan]"):
