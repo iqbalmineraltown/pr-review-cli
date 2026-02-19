@@ -468,7 +468,7 @@ def review(
 
 @app.command()
 def cache_stats():
-    """Show cached author statistics"""
+    """Show stats about cached authors"""
     config = Config()
     cache_dir = config.cache_dir
     author_cache_file = cache_dir / "author_history.json"

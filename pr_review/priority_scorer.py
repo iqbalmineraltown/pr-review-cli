@@ -7,7 +7,7 @@ from .models import BitbucketPR, PRDiff, PRAnalysis, PRWithPriority
 
 
 class PriorityScorer:
-    """Calculate priority scores for PRs based on multiple factors"""
+    """Figures out which PRs need attention most urgently"""
 
     # High-risk file patterns
     HIGH_RISK_PATTERNS = [
@@ -25,7 +25,7 @@ class PriorityScorer:
 
     @staticmethod
     def get_risk_level(score: int) -> str:
-        """Convert score to risk level category"""
+        """Turn a score into a risk level (CRITICAL, HIGH, MEDIUM, LOW)"""
         if score >= 70:
             return "CRITICAL"
         elif score >= 50:
@@ -74,7 +74,7 @@ class PriorityScorer:
     ) -> int:
         """
         Calculate priority score (0-100).
-        Higher score = needs more urgent attention.
+        Higher score = more urgent attention needed.
         """
         score = 0
 
@@ -134,7 +134,7 @@ class PriorityScorer:
         analysis: PRAnalysis,
         diff: PRDiff
     ) -> PRWithPriority:
-        """Calculate priority and return PRWithPriority object"""
+        """Score a PR and wrap it in a PRWithPriority object"""
         priority_score = self.calculate_priority_score(pr, diff, analysis)
 
         # Update author history
@@ -152,7 +152,7 @@ class PriorityScorer:
         analyses: list,
         diffs: list
     ) -> list[PRWithPriority]:
-        """Score multiple PRs and return sorted list"""
+        """Score a bunch of PRs and return them sorted by priority"""
         results = []
 
         for pr, analysis, diff in zip(prs, analyses, diffs):

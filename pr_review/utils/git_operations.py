@@ -1,7 +1,8 @@
-"""Git operations utility for local diff generation.
+"""
+Git operations for local diff generation.
 
-This module provides a clean interface to git commands for cloning repositories
-and generating diffs locally, avoiding API rate limits.
+A clean interface to git commands for cloning repos
+and generating diffs locally (bypasses API rate limits).
 """
 import asyncio
 import os
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class GitCommandError(Exception):
-    """Exception raised when a git command fails."""
+    """Raised when a git command blows up."""
     def __init__(self, command: str, exit_code: int, output: str, error: str):
         self.command = command
         self.exit_code = exit_code
@@ -25,14 +26,13 @@ class GitCommandError(Exception):
 
 
 class GitOperations:
-    """Wrapper for git operations with async subprocess handling."""
+    """Wrapper for git commands with async subprocess handling."""
 
     def __init__(self, timeout_seconds: int = 300):
         """
-        Initialize GitOperations.
+        Set up GitOperations.
 
-        Args:
-            timeout_seconds: Default timeout for git commands (default: 5 minutes)
+        timeout_seconds: Default timeout for git commands (default: 5 minutes)
         """
         self.timeout_seconds = timeout_seconds
 
@@ -41,8 +41,7 @@ class GitOperations:
         """
         Check if git is installed and accessible.
 
-        Returns:
-            True if git is available, False otherwise
+        Returns: True if git is available, False otherwise
         """
         try:
             result = subprocess.run(
@@ -62,15 +61,13 @@ class GitOperations:
         use_ssh: bool = True
     ) -> str:
         """
-        Construct Bitbucket clone URL.
+        Build a Bitbucket clone URL.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug
-            use_ssh: If True, use SSH URL; otherwise use HTTPS
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        use_ssh: SSH or HTTPS?
 
-        Returns:
-            Git remote URL string
+        Returns: Git remote URL string
 
         Examples:
             >>> get_remote_url("myworkspace", "myrepo", use_ssh=True)
@@ -90,20 +87,15 @@ class GitOperations:
         shallow: bool = True
     ) -> None:
         """
-        Clone a repository to the specified path.
+        Clone a repo to the specified path.
 
-        Uses bare clone for minimal disk usage. Attempts shallow clone first
-        (depth=1) for efficiency, with fallback to full clone if it fails.
+        Uses bare clone for minimal disk space. Tries shallow clone (depth=1)
+        first for speed, falls back to full clone if that fails.
 
-        After cloning, fetches all branches to ensure complete branch history.
-
-        Args:
-            remote_url: Git remote URL to clone from
-            target_path: Local path where repo should be cloned
-            shallow: If True, attempt shallow clone (depth=1) first
-
-        Raises:
-            GitCommandError: If clone fails (both shallow and full)
+        remote_url: Git remote URL to clone from
+        target_path: Where to put the repo
+        shallow: Try shallow clone first? (default: True)
+        Raises: GitCommandError on failure
         """
         # Ensure parent directory exists
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,13 +144,10 @@ class GitOperations:
         repo_path: Path
     ) -> None:
         """
-        Fetch all branches from remote in a bare repository.
+        Fetch all branches from remote in a bare repo.
 
-        Args:
-            repo_path: Path to the bare git repository
-
-        Raises:
-            GitCommandError: If fetch fails
+        repo_path: Path to the bare git repository
+        Raises: GitCommandError on failure
         """
         # In bare repositories, we need to explicitly fetch all branches
         # Store them in refs/remotes/origin/* to maintain standard git remote tracking
@@ -181,19 +170,15 @@ class GitOperations:
         context_lines: int = 3
     ) -> Tuple[str, int, int, List[str]]:
         """
-        Generate unified diff between two branches.
+        Generate a unified diff between two branches.
 
-        Args:
-            repo_path: Path to the bare git repository
-            source_branch: Source branch (e.g., "feature-branch")
-            destination_branch: Destination branch (e.g., "main")
-            context_lines: Number of context lines in diff (default: 3)
+        repo_path: Path to the bare git repository
+        source_branch: Source branch (e.g., "feature-branch")
+        destination_branch: Destination branch (e.g., "main")
+        context_lines: Context lines in diff (default: 3)
 
-        Returns:
-            Tuple of (diff_content, additions, deletions, files_changed)
-
-        Raises:
-            GitCommandError: If diff generation fails
+        Returns: (diff_content, additions, deletions, files_changed)
+        Raises: GitCommandError on failure
         """
         # Try different revision range syntaxes
         # 1. First try triple-dot (merge base) for cleaner diffs
@@ -263,11 +248,9 @@ class GitOperations:
         """
         Parse git diff --numstat output.
 
-        Args:
-            numstat_output: Output from 'git diff --numstat' command
+        numstat_output: Raw output from 'git diff --numstat'
 
-        Returns:
-            Tuple of (total_additions, total_deletions, list_of_files)
+        Returns: (total_additions, total_deletions, list_of_files)
 
         Example numstat output:
             15    2    path/to/file.py
@@ -315,17 +298,12 @@ class GitOperations:
         """
         Run a command asynchronously and return output.
 
-        Args:
-            command: Command and arguments as a list
-            timeout: Timeout in seconds
-            cwd: Working directory for command
+        command: Command and args as a list
+        timeout: Timeout in seconds
+        cwd: Working directory (optional)
 
-        Returns:
-            Tuple of (stdout, stderr)
-
-        Raises:
-            GitCommandError: If command returns non-zero exit code
-            asyncio.TimeoutError: If command times out
+        Returns: (stdout, stderr)
+        Raises: GitCommandError or asyncio.TimeoutError
         """
         logger.debug(f"Running command: {' '.join(command)}")
 
@@ -365,13 +343,10 @@ class GitOperations:
     @staticmethod
     def get_repo_size(repo_path: Path) -> int:
         """
-        Get the size of a repository in bytes.
+        Get the size of a repo in bytes.
 
-        Args:
-            repo_path: Path to the repository
-
-        Returns:
-            Size in bytes
+        repo_path: Path to the repo
+        Returns: Size in bytes
         """
         if not repo_path.exists():
             return 0

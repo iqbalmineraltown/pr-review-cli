@@ -11,7 +11,7 @@ from ..priority_scorer import PriorityScorer
 
 
 def risk_color(risk_level: str) -> str:
-    """Get color for risk level"""
+    """Pick a color for a risk level"""
     colors = {
         "CRITICAL": "red",
         "HIGH": "bright_red",
@@ -22,7 +22,7 @@ def risk_color(risk_level: str) -> str:
 
 
 def generate_markdown_for_pr(pr_with_priority: PRWithPriority) -> str:
-    """Generate markdown content for a single PR (for posting as comment)"""
+    """Turn a PR analysis into markdown (for posting as a comment)"""
     pr = pr_with_priority.pr
     analysis = pr_with_priority.analysis
 
@@ -72,7 +72,7 @@ def generate_markdown_for_pr(pr_with_priority: PRWithPriority) -> str:
 
 
 def generate_terminal_report(prs_with_priority: List[PRWithPriority]):
-    """Generate beautiful terminal output"""
+    """Print a nice report to the terminal"""
     console = Console()
 
     # Summary stats
@@ -159,7 +159,7 @@ def generate_terminal_report(prs_with_priority: List[PRWithPriority]):
 
 
 def generate_markdown_report(prs_with_priority: List[PRWithPriority], output_path: str):
-    """Export to markdown file"""
+    """Write a markdown report to a file"""
     markdown = []
     markdown.append("# PR Review Report\n\n")
     markdown.append(f"**Generated:** {prs_with_priority[0].pr.updated_on.strftime('%Y-%m-%d %H:%M')}\n\n")

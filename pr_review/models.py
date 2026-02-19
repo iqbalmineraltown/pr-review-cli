@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 class BitbucketPR(BaseModel):
-    """Bitbucket Pull Request model"""
+    """A Bitbucket Pull Request"""
     id: str
     title: str
     description: str
@@ -20,7 +20,7 @@ class BitbucketPR(BaseModel):
 
 
 class PRDiff(BaseModel):
-    """Pull Request diff model"""
+    """A PR diff with stats"""
     pr_id: str
     files_changed: List[str]
     additions: int
@@ -29,7 +29,7 @@ class PRDiff(BaseModel):
 
 
 class InlineComment(BaseModel):
-    """A specific line comment with file context for PR review"""
+    """A comment on a specific line of code"""
     file_path: str
     line_number: int  # Line number in NEW version (the "to" line)
     severity: str  # "critical", "high", "medium", "low"
@@ -38,7 +38,7 @@ class InlineComment(BaseModel):
 
 
 class PRAnalysis(BaseModel):
-    """AI analysis results for a PR"""
+    """What the AI thinks about a PR"""
     pr_id: str
     good_points: List[str]
     attention_required: List[str]
@@ -51,21 +51,21 @@ class PRAnalysis(BaseModel):
 
 
 class PRWithPriority(BaseModel):
-    """PR with priority score for sorting"""
+    """A PR bundled with its priority score"""
     pr: BitbucketPR
     analysis: PRAnalysis
     priority_score: int  # 0-100, higher = more urgent
 
 
 class UserInfo(BaseModel):
-    """Information about the authenticated user"""
+    """Who you are on Bitbucket"""
     uuid: str
     username: str
     display_name: str
 
 
 class ReviewerPersona(BaseModel):
-    """A reviewer persona for PR Defense Council mode"""
+    """A reviewer persona (used in PR Defense Council mode)"""
     name: str  # e.g., "Security Sentinel"
     slug: str  # e.g., "security-sentinel"
     description: str  # e.g., "Focuses on security vulnerabilities..."

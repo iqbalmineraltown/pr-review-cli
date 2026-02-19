@@ -24,15 +24,15 @@ AUTO_RESUME_SECONDS = 5
 
 
 class PRDataTable(DataTable):
-    """Custom DataTable that monitors cursor position"""
+    """DataTable that keeps an eye on cursor position"""
 
     def on_mount(self):
-        """Set up polling for cursor changes"""
+        """Start polling for cursor changes"""
         self.set_interval(0.1, self._check_cursor_change)
         self._last_cursor_row = self.cursor_row
 
     def _check_cursor_change(self):
-        """Check if cursor row changed and notify app"""
+        """See if cursor moved and tell the app about it"""
         if self.cursor_row != self._last_cursor_row:
             self._last_cursor_row = self.cursor_row
 
@@ -46,7 +46,7 @@ class PRDataTable(DataTable):
 
 
 class PRReviewApp(App):
-    """Interactive TUI for PR review"""
+    """Interactive TUI for reviewing PRs"""
 
     CSS = """
     Screen {
@@ -111,7 +111,7 @@ class PRReviewApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize the data table"""
+        """Set up the data table"""
         table = self.query_one("#prs", PRDataTable)
         table.add_columns("Priority", "Risk", "Repository", "Title", "Author", "Score")
 
@@ -151,7 +151,7 @@ class PRReviewApp(App):
             self._update_detail_panel(self.prs_with_priority[0])
 
     def _update_detail_panel(self, item: PRWithPriority):
-        """Update the detail panel with PR information"""
+        """Update the side panel with PR details"""
         detail_content = self.query_one("#detail_content", Static)
         pr = item.pr
         analysis = item.analysis
@@ -221,12 +221,12 @@ class PRReviewApp(App):
         detail_content.update(text)
 
     def action_open_in_browser(self) -> None:
-        """Open selected PR in browser"""
+        """Pop open the selected PR in your browser"""
         if self.selected_pr:
             webbrowser.open(self.selected_pr.pr.link)
 
     def _format_analysis_as_markdown(self, item: PRWithPriority) -> str:
-        """Format PR analysis as markdown for posting as comment"""
+        """Turn PR analysis into markdown for posting"""
         pr = item.pr
         analysis = item.analysis
 
@@ -289,7 +289,7 @@ class PRReviewApp(App):
         return markdown
 
     def _post_comment_terminal(self) -> bool:
-        """Post both summary and inline comments to PR using terminal UI. Returns True on success."""
+        """Post summary and inline comments via terminal. Returns True on success."""
         if not self.selected_pr:
             return False
 
@@ -388,7 +388,7 @@ class PRReviewApp(App):
         return True
 
     def action_post_comments(self) -> None:
-        """Post both summary and inline comments to selected PR"""
+        """Post summary and inline comments to the selected PR"""
         if not self.selected_pr:
             return
 
@@ -401,17 +401,16 @@ class PRReviewApp(App):
 
 def launch_interactive_tui(prs_with_priority: List[PRWithPriority], bitbucket_client: Optional[BitbucketClient] = None):
     """
-    Launch the interactive TUI application.
+    Fire up the interactive TUI.
 
-    This function handles the complete TUI lifecycle including:
+    Handles the full TUI lifecycle:
     - Running the TUI
     - Posting comments when 'p' is pressed
-    - Relaunching the TUI after posting
+    - Relaunching after posting
     - Exiting when 'q' is pressed
 
-    Args:
-        prs_with_priority: List of PRs with priority scores
-        bitbucket_client: Optional BitbucketClient for posting comments
+    prs_with_priority: List of PRs with priority scores
+    bitbucket_client: Optional BitbucketClient for posting comments
     """
     while True:
         app = PRReviewApp(prs_with_priority, bitbucket_client)

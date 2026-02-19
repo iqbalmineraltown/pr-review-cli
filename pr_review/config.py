@@ -6,7 +6,7 @@ from .utils.paths import get_env_file, ensure_directories
 
 
 class Config:
-    """Configuration management using .env files"""
+    """Manages config from .env files"""
 
     def __init__(self):
         # Load .env from multiple locations (in priority order)
@@ -26,31 +26,31 @@ class Config:
 
     @property
     def bitbucket_email(self) -> Optional[str]:
-        """Get Bitbucket email for basic auth (API Token) from .env"""
+        """Your Bitbucket email (for API token auth)"""
         return os.getenv("PR_REVIEWER_BITBUCKET_EMAIL")
 
     @property
     def bitbucket_api_token(self) -> Optional[str]:
-        """Get Bitbucket API token for basic auth (API Token) from .env"""
+        """Your Bitbucket API token"""
         return os.getenv("PR_REVIEWER_BITBUCKET_API_TOKEN")
 
     @property
     def bitbucket_workspace(self) -> Optional[str]:
-        """Get default Bitbucket workspace from .env"""
+        """Default workspace to use"""
         return os.getenv("PR_REVIEWER_BITBUCKET_WORKSPACE")
 
     @property
     def bitbucket_user_uuid(self) -> Optional[str]:
-        """Get Bitbucket user UUID from .env (cached for performance)"""
+        """Your cached UUID (saves an API call)"""
         return os.getenv("PR_REVIEWER_BITBUCKET_USER_UUID")
 
     @property
     def has_valid_credentials(self) -> bool:
-        """Check if we have valid basic auth credentials"""
+        """Do we have the credentials we need?"""
         return all([self.bitbucket_email, self.bitbucket_api_token])
 
     def _print_credentials_warning(self):
-        """Print helpful warning message when credentials are missing"""
+        """Show a helpful message when credentials are missing"""
         env_file = get_env_file()
 
         print("\n" + "="*60)
@@ -87,12 +87,12 @@ class Config:
 
     @property
     def claude_cli_command(self) -> str:
-        """Command to execute Claude CLI. Receives prompt via stdin."""
+        """Command to run Claude CLI (gets prompt via stdin)"""
         return os.getenv("CLAUDE_CLI_COMMAND", "claude")
 
     @property
     def claude_cli_flags(self) -> str:
-        """Flags to pass to Claude CLI for JSON output."""
+        """Flags to pass to Claude CLI for JSON output"""
         return os.getenv("CLAUDE_CLI_FLAGS", "-p --output-format json")
 
     @property

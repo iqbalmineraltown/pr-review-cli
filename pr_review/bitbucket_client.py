@@ -10,7 +10,7 @@ from .config import Config
 
 
 class BitbucketClient:
-    """Client for interacting with Bitbucket API using API Token authentication"""
+    """Talks to Bitbucket API using API token auth"""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class BitbucketClient:
             await self._client.aclose()
 
     async def _get(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """Make a GET request to the Bitbucket API"""
+        """Hit the Bitbucket API with a GET request"""
         if not self._client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
@@ -57,7 +57,7 @@ class BitbucketClient:
         return response.json()
 
     async def _get_raw(self, endpoint: str, params: Optional[dict] = None) -> str:
-        """Make a GET request that returns raw text (not JSON)"""
+        """GET request that returns raw text instead of JSON"""
         if not self._client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
@@ -66,7 +66,7 @@ class BitbucketClient:
         return response.text
 
     async def _post(self, endpoint: str, data: dict) -> dict:
-        """Make a POST request to the Bitbucket API"""
+        """POST some data to the Bitbucket API"""
         if not self._client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
@@ -75,7 +75,7 @@ class BitbucketClient:
         return response.json()
 
     async def get_current_user(self) -> UserInfo:
-        """Get the currently authenticated user's info"""
+        """Who am I? Gets the authenticated user's info"""
         try:
             response = await self._client.get("/user")
 
@@ -121,20 +121,17 @@ class BitbucketClient:
         state: str = "OPEN"
     ) -> List[BitbucketPR]:
         """
-        Fetch PRs where the current user is listed as a reviewer.
+        Grab all PRs where you're listed as a reviewer.
 
-        Automatically filters out PRs where the user has already responded
-        (approved or declined) to keep the review queue focused on pending work.
+        Skips PRs you've already approved/declined so your queue stays focused on pending work.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name (optional - if not specified, searches all repos in workspace)
-            user_uuid: Current user's UUID (without braces) - preferred if available
-            user_username: Current user's username - fallback if UUID not available
-            state: PR state filter (default: OPEN)
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name (optional - if not specified, searches all repos)
+        user_uuid: Your UUID (without braces) - preferred if available
+        user_username: Your username - fallback if UUID not available
+        state: PR state filter (default: OPEN)
 
-        Returns:
-            List of BitbucketPR objects that the user has NOT yet responded to
+        Returns: List of PRs you haven't responded to yet
         """
         # Build query to filter by reviewer
         # Prefer UUID search, fallback to username
@@ -350,15 +347,13 @@ class BitbucketClient:
         pr_id: str
     ) -> BitbucketPR:
         """
-        Fetch a single PR by ID.
+        Fetch a specific PR by its ID.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name
-            pr_id: Pull request ID
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        pr_id: Pull request ID
 
-        Returns:
-            BitbucketPR object
+        Returns: BitbucketPR object
         """
         try:
             pr_data = await self._get(
@@ -412,10 +407,9 @@ class BitbucketClient:
         pr_id: str
     ) -> PRDiff:
         """
-        Get the diff for a specific PR.
+        Get the diff for a PR.
 
-        Returns:
-            PRDiff object with diff content and statistics
+        Returns: PRDiff object with diff content and stats
         """
         try:
             diff_text = await self._get_raw(
@@ -473,20 +467,16 @@ class BitbucketClient:
         max_retries: int = 3
     ) -> dict:
         """
-        Post a markdown comment to a PR with retry logic.
+        Post a markdown comment to a PR. Retries on transient errors.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name
-            pr_id: Pull request ID
-            content: Markdown content for the comment
-            max_retries: Maximum number of retry attempts for transient errors
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        pr_id: Pull request ID
+        content: Markdown content for the comment
+        max_retries: How many times to retry on failures
 
-        Returns:
-            Response data from Bitbucket API containing comment details
-
-        Raises:
-            RuntimeError: If posting fails after all retries
+        Returns: Response data from Bitbucket API
+        Raises: RuntimeError if posting fails after all retries
         """
         endpoint = f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
         payload = {
@@ -547,22 +537,18 @@ class BitbucketClient:
         max_retries: int = 3
     ) -> dict:
         """
-        Post an inline comment to a specific line in a PR.
+        Post an inline comment on a specific line in a PR.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name
-            pr_id: Pull request ID
-            content: Comment content (markdown)
-            file_path: Path to the file in the repo
-            line_number: Line number in the NEW version (the "to" line)
-            max_retries: Maximum number of retry attempts
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        pr_id: Pull request ID
+        content: Comment content (markdown)
+        file_path: Path to the file in the repo
+        line_number: Line number in the NEW version (the "to" line)
+        max_retries: How many times to retry on failures
 
-        Returns:
-            Response data from Bitbucket API containing comment details
-
-        Raises:
-            RuntimeError: If posting fails after all retries
+        Returns: Response data from Bitbucket API
+        Raises: RuntimeError if posting fails after all retries
         """
         endpoint = f"/repositories/{workspace}/{repo_slug}/pullrequests/{pr_id}/comments"
         payload = {
@@ -635,19 +621,15 @@ class BitbucketClient:
         """
         Post multiple inline comments with rate limiting.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name
-            pr_id: Pull request ID
-            comments: List of InlineComment objects to post
-            delay_between: Delay in seconds between comments (default: 0.5)
-            max_comments: Maximum number of comments to post (default: 50)
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        pr_id: Pull request ID
+        comments: List of InlineComment objects to post
+        delay_between: Delay in seconds between comments (default: 0.5)
+        max_comments: Max comments to post (default: 50)
 
-        Returns:
-            List of response data from Bitbucket API for each posted comment
-
-        Raises:
-            RuntimeError: If posting fails critically
+        Returns: List of response data from Bitbucket API
+        Raises: RuntimeError if something goes really wrong
         """
         # Enforce max comments limit
         comments_to_post = comments[:max_comments]
@@ -691,16 +673,14 @@ class BitbucketClient:
         user_username: Optional[str] = None
     ) -> Tuple[List[BitbucketPR], List[PRDiff]]:
         """
-        Fetch both PRs and their diffs in parallel.
+        Fetch PRs and their diffs in parallel - convenient combo method.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug/name (optional - if not specified, searches all repos)
-            user_uuid: Current user's UUID (optional)
-            user_username: Current user's username (optional, used as fallback)
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name (optional - searches all repos if not specified)
+        user_uuid: Your UUID (optional)
+        user_username: Your username (optional, used as fallback)
 
-        Returns:
-            Tuple of (prs, diffs)
+        Returns: Tuple of (prs, diffs)
         """
         prs = await self.fetch_prs_assigned_to_me(workspace, repo_slug, user_uuid, user_username)
 

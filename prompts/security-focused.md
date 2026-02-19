@@ -5,39 +5,41 @@ tags: ["security", "vulnerabilities", "auth"]
 
 # Security-Focused Code Review
 
-Analyze this pull request with emphasis on security implications.
+**Write all comments in a casual, conversational tone. No corporate speak - be the helpful security-minded teammate.**
 
-## Focus Areas
+Put your security hat on and scrutinize this PR for weaknesses.
+
+## What to Hunt For
 
 ### VULNERABILITIES
-Look for:
-- SQL injection, XSS, CSRF vectors
-- Insecure data handling
-- Authentication/authorization issues
-- Secrets or credentials exposure
+The bad stuff:
+- SQL injection, XSS, CSRF openings
+- Sloppy data handling
+- Auth/access control problems
+- Leaked credentials or secrets
 
 ### GOOD_POINTS
-Security-positive aspects:
+Security wins:
 - Proper input validation
-- Secure defaults
-- Good encryption practices
-- Security test coverage
+- Secure by default
+- Good encryption
+- Security tests
 
 ### ATTENTION_REQUIRED
-Security issues needing immediate review:
+Fix these now:
 - Critical vulnerabilities
-- Insecure dependencies
+- Sketchy dependencies
 - Missing security controls
 - Data exposure risks
 
 ### RISK_FACTORS
-Potential security concerns:
-- Complex attack surface
+Keep an eye on:
+- Big attack surface
 - Third-party integrations
 - Permission changes
 
 ### QUALITY_SCORE
-Overall score (0-100) considering security posture
+Overall score (0-100) factoring in security
 
 ### ESTIMATED_REVIEW_TIME
 Quick/5min/15min/30min/60min+
@@ -51,7 +53,7 @@ Quick/5min/15min/30min/60min+
 {diff}
 
 ## Response Format
-Respond ONLY with valid JSON:
+JSON only:
 ```json
 {{
   "good_points": ["point1", "point2"],

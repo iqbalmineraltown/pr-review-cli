@@ -1,8 +1,8 @@
 """
-PR Defense Council - Multi-Agent Review Coordinator
+PR Defense Council - Multi-Agent Review
 
-Orchestrates multiple specialized reviewer personas to analyze a single PR
-in parallel, then aggregates their findings into a unified comprehensive review.
+Runs multiple specialized reviewers on a PR in parallel,
+then combines their findings into one comprehensive review.
 """
 
 import asyncio
@@ -11,6 +11,7 @@ import tempfile
 import os
 import json
 import re
+import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass
@@ -18,10 +19,12 @@ from dataclasses import dataclass
 from .models import BitbucketPR, PRAnalysis, InlineComment, ReviewerPersona
 from .config import Config
 
+logger = logging.getLogger(__name__)
+
 
 class ResultAggregator:
     """
-    Aggregates analysis results from multiple reviewer personas into a unified review.
+    Combines analysis results from multiple reviewers into one review.
 
     Strategy:
     - good_points: Union of all findings
@@ -35,14 +38,12 @@ class ResultAggregator:
     @staticmethod
     def aggregate(persona_analyses: List[PRAnalysis], pr_id: str) -> PRAnalysis:
         """
-        Aggregate multiple PRAnalysis objects into a single unified analysis.
+        Combine multiple PRAnalysis objects into one.
 
-        Args:
-            persona_analyses: List of PRAnalysis objects from different personas
-            pr_id: The PR ID being reviewed
+        persona_analyses: List of PRAnalysis objects from different personas
+        pr_id: The PR ID being reviewed
 
-        Returns:
-            A single PRAnalysis with aggregated findings
+        Returns: A single PRAnalysis with all findings combined
         """
         if not persona_analyses:
             return PRAnalysis(
@@ -118,10 +119,10 @@ class ResultAggregator:
 
 class DefenseCouncilAnalyzer:
     """
-    Coordinates multiple reviewer personas to analyze a PR in parallel.
+    Runs multiple reviewer personas on a PR in parallel.
 
-    Unlike ClaudeAnalyzer which processes multiple PRs with one agent,
-    this uses multiple agents to process one PR for deeper analysis.
+    Unlike ClaudeAnalyzer (one agent, multiple PRs),
+    this uses multiple agents on one PR for deeper analysis.
 
     Usage:
         analyzer = DefenseCouncilAnalyzer()
@@ -139,14 +140,13 @@ class DefenseCouncilAnalyzer:
 
     def _load_reviewer_personas(self) -> List[ReviewerPersona]:
         """
-        Load reviewer personas from multiple sources with priority order.
+        Load reviewer personas from config files.
 
         Priority:
-        1. User config directory (~/.pr-review-cli/reviewers/) - Highest priority
+        1. User config (~/.pr-review-cli/reviewers/) - Your custom personas
         2. Project directory (reviewers/) - Default personas
 
-        Returns:
-            List of ReviewerPersona objects
+        Returns: List of ReviewerPersona objects
         """
         import pr_review.defense_council
 
@@ -225,7 +225,7 @@ class DefenseCouncilAnalyzer:
         return personas
 
     def _extract_description(self, content: str) -> str:
-        """Extract first paragraph as description"""
+        """Grab the first paragraph as a description"""
         lines = content.split('\n')
         for line in lines[1:]:  # Skip first line (title)
             line = line.strip()
@@ -249,15 +249,13 @@ class DefenseCouncilAnalyzer:
         max_diff_size: int = 50000
     ) -> PRAnalysis:
         """
-        Analyze a single PR using all reviewer personas in parallel.
+        Analyze a PR using all reviewer personas in parallel.
 
-        Args:
-            pr: The PR to analyze
-            diff: The diff content
-            max_diff_size: Maximum size before skipping large PR handling
+        pr: The PR to analyze
+        diff: The diff content
+        max_diff_size: Max size before truncating
 
-        Returns:
-            Aggregated PRAnalysis from all personas
+        Returns: Combined PRAnalysis from all personas
         """
         self._print_ai_config_once()
 
@@ -302,15 +300,13 @@ class DefenseCouncilAnalyzer:
         persona: ReviewerPersona
     ) -> PRAnalysis:
         """
-        Analyze PR with a specific reviewer persona.
+        Analyze a PR with a specific reviewer persona.
 
-        Args:
-            pr: The PR to analyze
-            diff: The diff content
-            persona: The reviewer persona to use
+        pr: The PR to analyze
+        diff: The diff content
+        persona: The reviewer persona to use
 
-        Returns:
-            PRAnalysis from this persona
+        Returns: PRAnalysis from this persona
         """
         prompt = persona.prompt.format(
             title=pr.title,
@@ -329,14 +325,44 @@ class DefenseCouncilAnalyzer:
             result = await self._run_claude_analysis(prompt, prompt_file)
             output = result.strip()
 
-            # Extract JSON
-            json_start = output.find('{')
-            json_end = output.rfind('}') + 1
+            # Try to extract JSON from markdown code block first
+            json_block = re.search(r'```json\s*\n(.*?)\n```', output, re.DOTALL)
+            if json_block:
+                json_str = json_block.group(1)
+            else:
+                # Fall back to finding JSON object with balanced braces
+                json_start = output.find('{')
+                if json_start == -1:
+                    raise ValueError("No JSON found in Claude output")
 
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON found in Claude output")
+                # Find the matching closing brace
+                brace_count = 0
+                json_end = json_start
+                in_string = False
+                escape_next = False
+                for i, char in enumerate(output[json_start:], json_start):
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if char == '\\' and in_string:
+                        escape_next = True
+                        continue
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+                    elif not in_string:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
 
-            json_str = output[json_start:json_end]
+                if brace_count != 0:
+                    raise ValueError("Unbalanced braces in JSON output")
+
+                json_str = output[json_start:json_end]
+
             parsed_json = json.loads(json_str)
 
             # Handle GLM format
@@ -371,9 +397,8 @@ class DefenseCouncilAnalyzer:
                 estimated_review_time="Unknown"
             )
         except (json.JSONDecodeError, ValueError, RuntimeError) as e:
-            # Provide more detailed error for debugging
             error_msg = str(e)
-            if "No JSON found" in error_msg:
+            if "No JSON found" in error_msg or "Unbalanced braces" in error_msg:
                 return PRAnalysis(
                     pr_id=pr.id,
                     good_points=[],
@@ -386,7 +411,7 @@ class DefenseCouncilAnalyzer:
                 return PRAnalysis(
                     pr_id=pr.id,
                     good_points=[],
-                    attention_required=[f"{persona.name}: Analysis failed - {error_msg[:150]}"],
+                    attention_required=[f"{persona.name}: JSON parse error - {error_msg[:100]}"],
                     risk_factors=["Persona analysis error"],
                     overall_quality_score=50,
                     estimated_review_time="Unknown"
@@ -398,7 +423,7 @@ class DefenseCouncilAnalyzer:
                 pass
 
     async def _run_claude_analysis(self, prompt: str, prompt_file: str) -> str:
-        """Run Claude CLI analysis via shell command"""
+        """Run Claude CLI via shell"""
         loop = asyncio.get_event_loop()
 
         cmd = f"{self.claude_cli_command} {self.claude_cli_flags}"
@@ -432,7 +457,7 @@ class DefenseCouncilAnalyzer:
         raise RuntimeError("Claude CLI produced no output")
 
     def _extract_analysis_data(self, parsed_json: dict, persona_name: str = "AI") -> dict:
-        """Extract analysis data from GLM or Claude CLI format"""
+        """Pull analysis data from GLM or Claude CLI format"""
         if isinstance(parsed_json, dict) and "type" in parsed_json and "result" in parsed_json:
             result_content = parsed_json.get("result", "")
 
@@ -475,18 +500,16 @@ class DefenseCouncilAnalyzer:
         progress_callback: Optional[Callable] = None
     ) -> List[PRAnalysis]:
         """
-        Analyze multiple PRs sequentially (each gets full multi-agent review).
+        Analyze multiple PRs one at a time (each gets the full council review).
 
-        Note: Unlike ClaudeAnalyzer, this processes PRs sequentially because
-        each PR already uses parallelism across personas.
+        Note: Unlike ClaudeAnalyzer, this goes sequentially because
+        each PR already runs multiple personas in parallel.
 
-        Args:
-            prs: List of PRs to analyze
-            diffs: List of diff contents
-            progress_callback: Optional callback(current, total, pr_title)
+        prs: List of PRs to analyze
+        diffs: List of diff contents
+        progress_callback: Optional callback(current, total, pr_title)
 
-        Returns:
-            List of aggregated PRAnalysis objects
+        Returns: List of combined PRAnalysis objects
         """
         self._print_ai_config_once()
 

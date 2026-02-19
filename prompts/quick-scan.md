@@ -5,29 +5,31 @@ tags: ["quick", "triage", "high-level"]
 
 # Quick PR Scan
 
-Provide a rapid high-level assessment focusing on major issues only.
+**Write all comments in a casual, conversational tone. Keep it brief and friendly.**
 
-## Focus Areas
+Give this PR a quick once-over - just the big stuff.
+
+## What to Look For
 
 ### GOOD_POINTS
-What did the author do well?
+What's done well here?
 
 ### ATTENTION_REQUIRED
-Major red flags only:
+Only the scary stuff:
 - Blocking bugs
-- Critical security issues
-- Breaking changes not documented
-- Major logic errors
+- Critical security holes
+- Undocumented breaking changes
+- Major logic fails
 
 ### RISK_FACTORS
-Major concerns:
-- Missing critical functionality
+Big concerns:
+- Missing key functionality
 - Obvious breaking changes
 
-Skip minor issues and nitpicks.
+Skip the nitpicks - we're going fast here.
 
 ### QUALITY_SCORE
-Quick assessment (0-100)
+Quick gut check (0-100)
 
 ### ESTIMATED_REVIEW_TIME
 Quick/5min/15min/30min/60min+
@@ -41,7 +43,7 @@ Quick/5min/15min/30min/60min+
 {diff}
 
 ## Response Format
-Respond ONLY with valid JSON:
+Just JSON please:
 ```json
 {{
   "good_points": ["point1", "point2"],

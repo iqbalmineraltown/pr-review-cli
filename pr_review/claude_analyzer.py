@@ -12,8 +12,8 @@ from .config import Config
 
 class ClaudeAnalyzer:
     """
-    Analyzes PRs using the existing Claude CLI installation.
-    Communicates via subprocess calls to the 'claude' command.
+    Analyzes PRs using Claude CLI.
+    Talks to Claude via subprocess calls.
     """
 
     DEFAULT_PROMPT = '''Analyze this pull request diff and provide:
@@ -44,7 +44,7 @@ Do not include any other text outside the JSON.'''
         self._print_config_shown = False
 
     def _load_default_prompt(self) -> str:
-        """Load default prompt from markdown file, or use built-in default."""
+        """Load the default prompt from a markdown file, or fall back to built-in."""
         config = Config()
         prompts_dir = config.config_dir / "prompts"
         default_prompt_file = prompts_dir / "default.md"
@@ -81,13 +81,12 @@ Do not include any other text outside the JSON.'''
         skip_large: bool = True
     ) -> PRAnalysis:
         """
-        Analyze a PR using Claude CLI via subprocess.
+        Analyze a PR using Claude CLI.
 
-        Args:
-            pr: The PR to analyze
-            diff: The diff content
-            max_diff_size: Maximum size before skipping (only used if skip_large=True)
-            skip_large: If False, analyze all PRs regardless of size (e.g., for local diffs)
+        pr: The PR to analyze
+        diff: The diff content
+        max_diff_size: Max size before skipping (only used if skip_large=True)
+        skip_large: If False, analyze all PRs regardless of size
         """
         # Check if PR is too large for AI analysis (only if skip_large=True)
         if skip_large and len(diff) > max_diff_size:
@@ -212,7 +211,7 @@ Do not include any other text outside the JSON.'''
                 pass
 
     async def _run_claude_analysis(self, prompt: str, prompt_file: str) -> str:
-        """Run Claude CLI analysis via shell command"""
+        """Fire off Claude CLI via shell command"""
         loop = asyncio.get_event_loop()
 
         cmd = f"{self.claude_cli_command} {self.claude_cli_flags}"
@@ -253,11 +252,8 @@ Do not include any other text outside the JSON.'''
         GLM format: {"type": "result", "result": "```json\\n{actual_data}\\n```", ...}
         Claude CLI format: {"good_points": [...], "attention_required": [...], ...}
 
-        Args:
-            parsed_json: The parsed JSON output from the AI CLI
-
-        Returns:
-            dict with keys: good_points, attention_required, risk_factors, etc.
+        parsed_json: The parsed JSON output from the AI CLI
+        Returns: dict with keys: good_points, attention_required, risk_factors, etc.
         """
         # Check if this is GLM format (has "type" and "result" keys)
         if isinstance(parsed_json, dict) and "type" in parsed_json and "result" in parsed_json:
@@ -314,13 +310,12 @@ Do not include any other text outside the JSON.'''
         skip_large: bool = True
     ) -> List[PRAnalysis]:
         """
-        Analyze multiple PRs in parallel using Claude CLI.
+        Analyze multiple PRs in parallel (up to 3 at a time).
 
-        Args:
-            prs: List of PRs to analyze
-            diffs: List of diff contents
-            progress_callback: Optional callback function(current, total, pr_title)
-            skip_large: If False, analyze all PRs regardless of size (e.g., for local diffs)
+        prs: List of PRs to analyze
+        diffs: List of diff contents
+        progress_callback: Optional callback function(current, total, pr_title)
+        skip_large: If False, analyze all PRs regardless of size
         """
         # Print AI config once
         self._print_ai_config_once()

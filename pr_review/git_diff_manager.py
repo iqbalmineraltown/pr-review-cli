@@ -1,7 +1,8 @@
-"""Local git diff manager with repository caching.
+"""
+Local git diff manager with caching.
 
-This module handles cloning and caching git repositories locally to generate
-diffs without hitting API rate limits.
+Clones and caches repos locally so we can generate diffs
+without worrying about API rate limits.
 """
 import json
 import asyncio
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocalGitDiffManager:
-    """Manages local git repository caching and diff generation."""
+    """Handles local git repo caching and diff generation."""
 
     METADATA_FILE = "metadata.json"
     METADATA_VERSION = "1.0"
@@ -33,15 +34,14 @@ class LocalGitDiffManager:
         timeout_seconds: int = 300
     ):
         """
-        Initialize the local git diff manager.
+        Set up the local git diff manager.
 
-        Args:
-            cache_dir: Base cache directory (defaults to ~/.pr-review-cli/cache/git_repos)
-            console: Rich console for status messages (optional)
-            use_ssh: If True, use SSH for git operations; otherwise HTTPS
-            max_age_days: Maximum age of cached repos before cleanup (default: 30)
-            max_size_gb: Maximum total cache size in GB (default: 5.0)
-            timeout_seconds: Timeout for git operations (default: 300)
+        cache_dir: Where to cache repos (default: ~/.pr-review-cli/cache/git_repos)
+        console: Rich console for status messages (optional)
+        use_ssh: Use SSH for git? (otherwise HTTPS)
+        max_age_days: How old before cleanup (default: 30)
+        max_size_gb: Max cache size in GB (default: 5.0)
+        timeout_seconds: Timeout for git ops (default: 300)
         """
         self.cache_dir = cache_dir or get_git_cache_dir()
         self.workspace_dir = self.cache_dir / "workspace"
@@ -74,24 +74,19 @@ class LocalGitDiffManager:
         destination_branch: str
     ) -> PRDiff:
         """
-        Get PR diff by cloning repository and generating diff locally.
+        Get a PR diff by cloning the repo locally.
 
-        This is the main entry point for local diff generation. It handles
-        repository cloning/caching, updating, and diff generation.
+        This is the main entry point. It handles cloning, caching,
+        updating, and diff generation.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug
-            pr_id: Pull request ID
-            source_branch: Source branch name
-            destination_branch: Destination branch name
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        pr_id: Pull request ID
+        source_branch: Source branch name
+        destination_branch: Destination branch name
 
-        Returns:
-            PRDiff object with diff content and statistics
-
-        Raises:
-            RuntimeError: If git operations fail
-            GitCommandError: If git commands fail
+        Returns: PRDiff object with diff content and stats
+        Raises: RuntimeError or GitCommandError on failure
         """
         repo_key = f"{workspace}/{repo_slug}"
         repo_path = self.workspace_dir / f"{repo_key}.git"
@@ -147,14 +142,11 @@ class LocalGitDiffManager:
 
     async def _ensure_repo_cloned(self, workspace: str, repo_slug: str) -> None:
         """
-        Ensure repository is cloned, updating if it already exists.
+        Make sure the repo is cloned and up-to-date.
 
-        Args:
-            workspace: Bitbucket workspace name
-            repo_slug: Repository slug
-
-        Raises:
-            GitCommandError: If clone or update fails
+        workspace: Bitbucket workspace name
+        repo_slug: Repository name
+        Raises: GitCommandError on failure
         """
         repo_key = f"{workspace}/{repo_slug}"
         repo_path = self.workspace_dir / f"{repo_key}.git"
@@ -192,14 +184,11 @@ class LocalGitDiffManager:
 
     async def _update_repository(self, repo_path: Path, repo_key: str) -> None:
         """
-        Fetch latest changes for an existing repository.
+        Fetch latest changes for an existing repo.
 
-        Args:
-            repo_path: Path to the repository
-            repo_key: Repository key (e.g., "workspace/repo")
-
-        Raises:
-            GitCommandError: If fetch fails
+        repo_path: Path to the repository
+        repo_key: Repository key (e.g., "workspace/repo")
+        Raises: GitCommandError on failure
         """
         try:
             await self.git_ops.fetch_branches(repo_path)
@@ -244,13 +233,12 @@ class LocalGitDiffManager:
         initial_clone: bool = False
     ) -> None:
         """
-        Update metadata for a repository.
+        Update metadata for a repo.
 
-        Args:
-            repo_key: Repository key (e.g., "workspace/repo")
-            cloned_at: ISO timestamp when repo was cloned
-            last_fetched: ISO timestamp when repo was last fetched
-            initial_clone: True if this is a new clone
+        repo_key: Repository key (e.g., "workspace/repo")
+        cloned_at: When repo was cloned
+        last_fetched: When repo was last fetched
+        initial_clone: True if this is a new clone
         """
         metadata = self._load_metadata()
 
@@ -276,12 +264,7 @@ class LocalGitDiffManager:
         self._save_metadata(metadata)
 
     def _load_metadata(self) -> Dict[str, Any]:
-        """
-        Load metadata from file.
-
-        Returns:
-            Metadata dictionary
-        """
+        """Load metadata from file. Returns: dict"""
         if not self.metadata_file.exists():
             return {
                 "version": self.METADATA_VERSION,
@@ -302,24 +285,17 @@ class LocalGitDiffManager:
             }
 
     def _save_metadata(self, metadata: Dict[str, Any]) -> None:
-        """
-        Save metadata to file.
-
-        Args:
-            metadata: Metadata dictionary to save
-        """
+        """Save metadata dict to file."""
         with open(self.metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
     async def cleanup_stale_repos(self) -> None:
         """
-        Remove old or large repositories from cache.
+        Remove old or oversized repos from cache.
 
-        Cleanup criteria:
-        1. Repositories older than max_age_days
-        2. If total cache size exceeds max_size_bytes, remove oldest repos first
-
-        This method updates the metadata file after cleanup.
+        Cleanup rules:
+        1. Repos older than max_age_days
+        2. If total size exceeds max_size_bytes, remove oldest first
         """
         metadata = self._load_metadata()
         repositories = metadata.get("repositories", {})
