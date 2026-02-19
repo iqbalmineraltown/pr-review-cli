@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "027fa3164a3c",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "pr_review/claude_analyzer.py",
+    "pr_review/defense_council.py",
+    "pr_review/presenters/interactive_tui.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/02/7fa3164a3c/0/metadata.json",
+      "transcript": "/02/7fa3164a3c/0/full.jsonl",
+      "context": "/02/7fa3164a3c/0/context.md",
+      "content_hash": "/02/7fa3164a3c/0/content_hash.txt",
+      "prompt": "/02/7fa3164a3c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52213,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 886528,
+    "output_tokens": 3663,
+    "api_call_count": 20
+  }
+}
