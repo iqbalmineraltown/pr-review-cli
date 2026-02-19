@@ -203,21 +203,19 @@ class PRReviewApp(App):
                 text.append(f"  • {risk}\n")
             text.append("\n")
 
-        # Show inline comments preview
+        # Show inline comments (sorted by severity: critical -> high -> medium -> low)
         if analysis.line_comments:
             text.append("📍 Inline Comments\n", style="bold cyan")
-            for comment in analysis.line_comments[:10]:  # Show first 10
+            for comment in analysis.line_comments:
                 severity_style = {
                     "critical": "bold red",
                     "high": "red",
                     "medium": "yellow",
                     "low": "green"
-                }.get(comment.severity, "")
+                }.get(comment.severity.lower(), "")
                 text.append(f"  [{comment.severity.upper()}] ", style=severity_style)
                 text.append(f"{comment.file_path}:{comment.line_number}\n")
                 text.append(f"    {comment.message}\n")
-            if len(analysis.line_comments) > 10:
-                text.append(f"  ... and {len(analysis.line_comments) - 10} more\n")
             text.append("\n")
 
         detail_content.update(text)

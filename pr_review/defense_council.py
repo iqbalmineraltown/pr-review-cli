@@ -88,6 +88,11 @@ class ResultAggregator:
                     seen[key] = comment
             return list(seen.values())
 
+        # Sort line comments by severity (critical -> high -> medium -> low)
+        def sort_by_severity(comments: List[InlineComment]) -> List[InlineComment]:
+            severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+            return sorted(comments, key=lambda c: severity_order.get(c.severity.lower(), 4))
+
         # Calculate average quality score
         quality_scores = [a.overall_quality_score for a in persona_analyses if a.overall_quality_score > 0]
         avg_quality = int(sum(quality_scores) / len(quality_scores)) if quality_scores else 50
@@ -107,7 +112,7 @@ class ResultAggregator:
             risk_factors=deduplicate(all_risk_factors),
             overall_quality_score=avg_quality,
             estimated_review_time=max_time,
-            line_comments=deduplicate_line_comments(all_line_comments)
+            line_comments=sort_by_severity(deduplicate_line_comments(all_line_comments))
         )
 
 

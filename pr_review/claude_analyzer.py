@@ -160,6 +160,10 @@ Do not include any other text outside the JSON.'''
                     # Skip invalid inline comments
                     pass
 
+            # Sort by severity (critical -> high -> medium -> low)
+            severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+            line_comments.sort(key=lambda c: severity_order.get(c.severity.lower(), 4))
+
             return PRAnalysis(
                 pr_id=pr.id,
                 good_points=analysis_data.get("good_points", []),
