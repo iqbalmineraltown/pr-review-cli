@@ -40,6 +40,7 @@ Do not include any other text outside the JSON.'''
         config = Config()
         self.claude_cli_command = config.claude_cli_command
         self.claude_cli_flags = config.claude_cli_flags
+        self.config = config
         self.prompt_template = prompt_template or self._load_default_prompt()
         self._print_config_shown = False
 
@@ -121,7 +122,8 @@ Do not include any other text outside the JSON.'''
             author=pr.author,
             source=pr.source_branch,
             destination=pr.destination_branch,
-            diff=diff_to_analyze
+            diff=diff_to_analyze,
+            ignore_instructions=self.config.get_ignore_instructions_text()
         )
 
         # Write prompt to temp file
@@ -221,12 +223,16 @@ Do not include any other text outside the JSON.'''
         # Use longer timeout for large prompts (more than 10k chars)
         timeout = 300 if len(prompt) > 10000 else 120
 
+        # Use interactive shell to access shell functions/aliases
+        import os
+        user_shell = os.environ.get('SHELL', '/bin/zsh')
+        shell_name = os.path.basename(user_shell)
+
         try:
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    cmd,
-                    shell=True,
+                    [user_shell, '-i', '-c', cmd],  # Interactive shell to load aliases/functions
                     capture_output=True,
                     text=True,
                     timeout=timeout,

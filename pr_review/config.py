@@ -1,7 +1,8 @@
 import os
-from typing import Optional
+from typing import Optional, List
 from dotenv import load_dotenv
 from pathlib import Path
+import yaml
 from .utils.paths import get_env_file, ensure_directories
 
 
@@ -128,3 +129,104 @@ class Config:
     @property
     def git_timeout_seconds(self) -> int:
         return int(os.getenv("PR_REVIEWER_GIT_TIMEOUT", "300"))
+
+    @property
+    def ignore_file(self) -> Path:
+        """Path to the centralized ignore configuration file"""
+        return self.config_dir / "ignore.yaml"
+
+    def load_ignore_patterns(self) -> dict:
+        """
+        Load ignore patterns from YAML file.
+
+        Returns dict with:
+        - patterns: list of file patterns to ignore
+        - description: human-readable description for each pattern
+        """
+        default_patterns = {
+            "patterns": [
+                {"pattern": "*.g.dart", "description": "Dart generated files from build_runner"},
+                {"pattern": "*.lock", "description": "Dependency lock files (pubspec.lock, Podfile.lock, etc.)"},
+                {"pattern": "*.freezed.dart", "description": "Dart freezed generated files"},
+                {"pattern": "*.mocks.dart", "description": "Dart mockito generated files"},
+            ]
+        }
+
+        if not self.ignore_file.exists():
+            # Create default ignore file
+            self._create_default_ignore_file()
+            return default_patterns
+
+        try:
+            with open(self.ignore_file, 'r') as f:
+                data = yaml.safe_load(f)
+                if data and "patterns" in data:
+                    return data
+        except Exception:
+            pass
+
+        return default_patterns
+
+    def _create_default_ignore_file(self):
+        """Create the default ignore.yaml file"""
+        default_content = '''# ═══════════════════════════════════════════════════════════════
+# PR Review CLI - Ignore Patterns Configuration
+# ═══════════════════════════════════════════════════════════════
+#
+# Files matching these patterns will be excluded from AI review.
+# The ignore instructions are automatically injected into all
+# reviewer prompts (default prompt and PR Defense Council personas).
+#
+# Pattern syntax: glob-style patterns (*.ext, path/to/file, etc.)
+# ═══════════════════════════════════════════════════════════════
+
+patterns:
+  # Dart/Flutter generated files
+  - pattern: "*.g.dart"
+    description: "Dart generated files from build_runner"
+
+  - pattern: "*.freezed.dart"
+    description: "Dart freezed generated files"
+
+  - pattern: "*.mocks.dart"
+    description: "Dart mockito generated mocks"
+
+  # Dependency lock files
+  - pattern: "*.lock"
+    description: "Dependency lock files (pubspec.lock, Podfile.lock, etc.)"
+
+  # Add your custom ignore patterns below:
+  # - pattern: "*.generated.ts"
+  #   description: "TypeScript generated files"
+'''
+        self.ignore_file.write_text(default_content)
+
+    def get_ignore_instructions_text(self) -> str:
+        """
+        Generate formatted ignore instructions text for prompts.
+
+        This text can be injected into prompts using {ignore_instructions}
+        """
+        data = self.load_ignore_patterns()
+        patterns = data.get("patterns", [])
+
+        if not patterns:
+            return ""
+
+        lines = ["## Ignore These Files", ""]
+        lines.append("Don't waste time on auto-generated files. Skip these:")
+        lines.append("")
+
+        for item in patterns:
+            pattern = item.get("pattern", "")
+            desc = item.get("description", "")
+            if pattern:
+                if desc:
+                    lines.append(f"- `{pattern}` - {desc}")
+                else:
+                    lines.append(f"- `{pattern}`")
+
+        lines.append("")
+        lines.append("Focus your review on hand-written source code only.")
+
+        return "\n".join(lines)

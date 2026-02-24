@@ -313,7 +313,8 @@ class DefenseCouncilAnalyzer:
             author=pr.author,
             source=pr.source_branch,
             destination=pr.destination_branch,
-            diff=diff
+            diff=diff,
+            ignore_instructions=self.config.get_ignore_instructions_text()
         )
 
         # Write prompt to temp file
@@ -432,12 +433,14 @@ class DefenseCouncilAnalyzer:
 
         timeout = 300  # 5 minutes for persona analysis
 
+        # Use interactive shell to access shell functions/aliases
+        user_shell = os.environ.get('SHELL', '/bin/zsh')
+
         try:
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    cmd,
-                    shell=True,
+                    [user_shell, '-i', '-c', cmd],  # Interactive shell to load aliases/functions
                     capture_output=True,
                     text=True,
                     timeout=timeout,

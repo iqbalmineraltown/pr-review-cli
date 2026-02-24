@@ -13,6 +13,8 @@ Branch: {source} → {destination}
 Diff:
 {diff}
 
+{ignore_instructions}
+
 ## What to Look For
 
 ### The Big Baddies
